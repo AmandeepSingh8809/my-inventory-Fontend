@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Provider as PaperProvider, Text, Avatar, Surface, Divider, Button } from 'react-native-paper';
 
-// IMPORT ALL YOUR MODULAR SCREENS
+// IMPORTANT: This tells the app to use your new separate files!
 import DashboardScreen from '../screens/DashboardScreen';
 import FinancialsScreen from '../screens/FinancialsScreen';
 import AddItemScreen from '../screens/AddItemScreen';
 import SettingsScreen from '../screens/SettingsScreen'; 
-import SalesScreen from '../screens/SalesScreen';
+
 const SidebarDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
 
@@ -34,7 +34,6 @@ const SidebarDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
         <Divider style={styles.divider} />
         <NavButton title="Dashboard" icon="home" tabName="Home" />
         <NavButton title="Monetary & Finances" icon="cash-multiple" tabName="Financials" />
-        <NavButton title="Sell-Product" icon="plus-box" tabName="SellItem" />
         <NavButton title="Add New Product" icon="plus-box" tabName="AddItem" />
         <Divider style={styles.divider} />
         <NavButton title="Settings" icon="cog" tabName="Settings" />
@@ -52,7 +51,6 @@ export default function MainApp() {
     switch(activeTab) {
       case 'Home': return 'Inventory Dashboard';
       case 'Financials': return 'Monetary Overview';
-      case 'SellItem': return 'Sell Item';
       case 'AddItem': return 'Add Item';
       case 'Settings': return 'Settings';
       default: return 'App';
@@ -81,11 +79,10 @@ export default function MainApp() {
           />
         )}
 
-        {/* THIS IS WHERE THE MAGIC HAPPENS - It dynamically loads your real database files! */}
+        {/* THIS IS WHERE THE MAGIC HAPPENS - It dynamically loads your modular files */}
         <View style={{ flex: 1 }}>
           {activeTab === 'Home' && <DashboardScreen setActiveTab={setActiveTab} />}
           {activeTab === 'Financials' && <FinancialsScreen />}
-          {activeTab === 'SellItem' && <SalesScreen />}
           {activeTab === 'AddItem' && <AddItemScreen setActiveTab={setActiveTab} />}
           {activeTab === 'Settings' && <SettingsScreen />}
         </View>
@@ -106,5 +103,5 @@ const styles = StyleSheet.create({
   userName: { marginTop: 10, fontWeight: 'bold' },
   userRole: { color: '#666' },
   divider: { marginVertical: 15 },
-  drawerItem: { marginVertical: 6, alignItems: 'flex-start' },
+  drawerItem: { marginVertical: 6 },
 });
