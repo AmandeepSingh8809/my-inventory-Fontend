@@ -8,6 +8,10 @@ import FinancialsScreen from '../screens/FinancialsScreen';
 import AddItemScreen from '../screens/AddItemScreen';
 import SettingsScreen from '../screens/SettingsScreen'; 
 import SalesScreen from '../screens/SalesScreen';
+// NEW IMPORTS
+import SalesHistoryScreen from '../screens/SalesHistoryScreen';
+import PurchaseHistoryScreen from '../screens/PurchaseHistoryScreen';
+
 const SidebarDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
 
@@ -32,11 +36,20 @@ const SidebarDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
           <Text variant="bodySmall" style={styles.userRole}>{user.role}</Text>
         </View>
         <Divider style={styles.divider} />
+        
         <NavButton title="Dashboard" icon="home" tabName="Home" />
-        <NavButton title="Monetary & Finances" icon="cash-multiple" tabName="Financials" />
-        <NavButton title="Sell-Product" icon="plus-box" tabName="SellItem" />
+        <NavButton title="Sell Product" icon="cart-arrow-up" tabName="SellItem" />
         <NavButton title="Add New Product" icon="plus-box" tabName="AddItem" />
+        
         <Divider style={styles.divider} />
+        
+        {/* NEW HISTORY TABS */}
+        <NavButton title="Sales Activity" icon="history" tabName="SalesHistory" />
+        <NavButton title="Stock In Activity" icon="truck-delivery" tabName="PurchaseHistory" />
+        <NavButton title="Monetary & Finances" icon="cash-multiple" tabName="Financials" />
+        
+        <Divider style={styles.divider} />
+        
         <NavButton title="Settings" icon="cog" tabName="Settings" />
       </Surface>
     </View>
@@ -52,8 +65,10 @@ export default function MainApp() {
     switch(activeTab) {
       case 'Home': return 'Inventory Dashboard';
       case 'Financials': return 'Monetary Overview';
-      case 'SellItem': return 'Sell Item';
+      case 'SellItem': return 'Point of Sale';
       case 'AddItem': return 'Add Item';
+      case 'SalesHistory': return 'Sales History'; // NEW
+      case 'PurchaseHistory': return 'Purchase History'; // NEW
       case 'Settings': return 'Settings';
       default: return 'App';
     }
@@ -81,12 +96,16 @@ export default function MainApp() {
           />
         )}
 
-        {/* THIS IS WHERE THE MAGIC HAPPENS - It dynamically loads your real database files! */}
         <View style={{ flex: 1 }}>
           {activeTab === 'Home' && <DashboardScreen setActiveTab={setActiveTab} />}
           {activeTab === 'Financials' && <FinancialsScreen />}
           {activeTab === 'SellItem' && <SalesScreen />}
           {activeTab === 'AddItem' && <AddItemScreen setActiveTab={setActiveTab} />}
+          
+          {/* NEW SCREENS */}
+          {activeTab === 'SalesHistory' && <SalesHistoryScreen />}
+          {activeTab === 'PurchaseHistory' && <PurchaseHistoryScreen />}
+          
           {activeTab === 'Settings' && <SettingsScreen />}
         </View>
 

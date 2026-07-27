@@ -1,57 +1,59 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Modal, Linking } from 'react-native';
 import { Text, TextInput, Button, Card, Searchbar, IconButton, List, Divider } from 'react-native-paper';
 import api from '../api/client';
-import BarcodeScannerModal from '../components/BarcodeScannerModal'; // Import your scanner
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function SalesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  
-  // Scanner State
   const [scannerVisible, setScannerVisible] = useState(false);
-  
-  // The item they tapped on (or scanned)
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  
-  // Checkout States
-  const [sellQuantity, setSellQuantity] = useState("1");
-  const [sellPrice, setSellPrice] = useState("0"); 
+  const [cart, setCart] = useState([]); 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 1. Manual Search as they type
+  // NEW: Customer Info States
+  const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerGst, setCustomerGst] = useState('');
+  
+  // NEW: Share Receipt States
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [lastOrder, setLastOrder] = useState(null);
+
+  // 1. Manual Search & Scanner Input
   const executeSearch = async (text) => {
-    setSearchQuery(text);
-    if (text.length < 2) {
+    const cleanText = text.replace(/[\r\n\t]/g, '').trim();
+    setSearchQuery(cleanText);
+    
+    if (cleanText.length < 2) {
       setSearchResults([]); 
       return;
     }
-
     try {
-      const response = await api.get(`/search?query=${text}`);
-      setSearchResults(response.data);
+      const response = await api.get(`/search?query=${cleanText}`);
+      const results = response.data;
+      if (results.length === 1 && results[0].code === cleanText) {
+        addToCart(results[0]);
+      } else {
+        setSearchResults(results);
+      }
     } catch (error) {
       console.error("Search failed:", error);
     }
   };
 
-  // 2. Barcode Scanner Success Handler
   const handleScanSuccess = async (scannedCode) => {
-    setScannerVisible(false); // Close modal
-    setSearchQuery(scannedCode); // Update search bar text
+    setScannerVisible(false); 
+    const cleanCode = scannedCode.replace(/[\r\n\t]/g, '').trim();
+    setSearchQuery(cleanCode); 
     
     try {
-      const response = await api.get(`/search?query=${scannedCode}`);
+      const response = await api.get(`/search?query=${cleanCode}`);
       const results = response.data;
-      
-      // Smart Auto-Select: If the barcode returns exactly one match, skip the list!
       if (results.length === 1) {
-        setSelectedProduct(results[0]);
-        setSellPrice(String(results[0].price));
-        setSearchResults([]);
-        setSearchQuery('');
+        addToCart(results[0]);
       } else {
-        // If multiple items somehow share part of the code, show the list
         setSearchResults(results);
       }
     } catch (error) {
@@ -59,168 +61,233 @@ export default function SalesScreen() {
     }
   };
 
-  // 3. Process the Sale
-  const handleCheckout = async () => {
-    const qty = parseInt(sellQuantity) || 1;
-    const finalPrice = parseFloat(sellPrice) || 0;
-
-    if (qty > selectedProduct.quantity) {
-      Alert.alert("Stock Error", `Only ${selectedProduct.quantity} left in stock!`);
-      return;
+  // 2. Cart Management
+  const addToCart = (product) => {
+    if (product.quantity <= 0) {
+      Alert.alert("Out of Stock", `${product.name} has 0 stock available!`);
+      setSearchResults([]);
+      setSearchQuery('');
+      return; 
     }
+    const existingItem = cart.find(item => item.id === product.id);
+    if (existingItem) {
+      if (parseInt(existingItem.cartQty) < product.quantity) {
+        updateCartItem(product.id, 'cartQty', String(parseInt(existingItem.cartQty) + 1));
+      } else {
+        Alert.alert("Stock Limit", `Only ${product.quantity} available.`);
+      }
+    } else {
+      setCart([{ ...product, cartQty: "1", sellPrice: String(product.price) }, ...cart]);
+    }
+    setSearchResults([]);
+    setSearchQuery('');
+  };
 
-    if (finalPrice <= 0) {
-      Alert.alert("Invalid Price", "Selling price must be greater than 0.");
+  const updateCartItem = (id, field, value) => {
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        if (field === 'cartQty' && parseInt(value) > item.quantity) {
+          Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
+          return { ...item, cartQty: String(item.quantity) };
+        }
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const removeFromCart = (id) => setCart(cart.filter(item => item.id !== id));
+
+  const grandTotal = cart.reduce((sum, item) => {
+    return sum + ((parseInt(item.cartQty) || 1) * (parseFloat(item.sellPrice) || 0));
+  }, 0);
+
+  // 3. Process Checkout (Modified to submit Customer Data)
+  const processCheckout = async () => {
+    if (!customerName || !customerPhone) {
+      Alert.alert('Required', 'Please enter at least the Customer Name and Phone Number.');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      await api.post('/api/sales', {
-        productId: selectedProduct.id,
-        quantity: qty,
-        unitPrice: finalPrice,
-        totalAmount: finalPrice * qty, 
-        paymentMethod: 'CASH'
+      // Stringify customer object so it saves cleanly to the database text/JSON field
+      const customerDataString = JSON.stringify({
+        name: customerName,
+        phone: customerPhone,
+        gst: customerGst
       });
+
+      const payload = {
+        items: cart.map(item => ({
+          productId: item.id,
+          quantity: parseInt(item.cartQty) || 1,
+          unitPrice: parseFloat(item.sellPrice) || 0,
+          totalAmount: (parseFloat(item.sellPrice) || 0) * (parseInt(item.cartQty) || 1)
+        })),
+        paymentMethod: 'CASH',
+        customerInfo: customerDataString
+      };
+
+      await api.post('/sales/bulk', payload);
       
-      Alert.alert('Success', 'Sale recorded!');
+      // Save order details to generate the text receipt
+      setLastOrder({
+        items: cart,
+        total: grandTotal,
+        customer: { name: customerName, phone: customerPhone, gst: customerGst }
+      });
+
+      // Reset Cart & Close Checkout Modal
+      setCart([]);
+      setCheckoutModalVisible(false);
+      setCustomerName('');
+      setCustomerPhone('');
+      setCustomerGst('');
       
-      // Reset for the next customer
-      setSelectedProduct(null);
-      setSearchQuery('');
-      setSellQuantity("1");
-      setSellPrice("0");
+      // Open Share Modal
+      setShareModalVisible(true);
 
     } catch (error) {
-      Alert.alert('Error', 'Failed to process sale.');
+      Alert.alert('Error', 'Failed to process checkout.');
     } finally {
       setIsProcessing(false);
     }
   };
 
+  // 4. Generate & Share Bill
+  const generateBillText = () => {
+    if (!lastOrder) return "";
+    let text = `*INVOICE*\nCustomer: ${lastOrder.customer.name}\n`;
+    if (lastOrder.customer.gst) text += `GST: ${lastOrder.customer.gst}\n`;
+    text += `----------------------\n`;
+    lastOrder.items.forEach(item => {
+      text += `${item.name} x ${item.cartQty} = ₹${(item.sellPrice * item.cartQty)}\n`;
+    });
+    text += `----------------------\n`;
+    text += `*Total: ₹${lastOrder.total}*\n`;
+    text += `Thank you for shopping with us!`;
+    return text;
+  };
+
+  const shareViaWhatsApp = () => {
+    const text = encodeURIComponent(generateBillText());
+    // Prepend +91 to the number (Assumes Indian numbers)
+    Linking.openURL(`whatsapp://send?phone=91${lastOrder.customer.phone}&text=${text}`);
+  };
+
+  const shareViaTelegram = () => {
+    const text = encodeURIComponent(generateBillText());
+    Linking.openURL(`https://t.me/+91${lastOrder.customer.phone}?text=${text}`);
+  };
+
+  const shareViaEmail = () => {
+    const text = encodeURIComponent(generateBillText());
+    Linking.openURL(`mailto:?subject=Invoice from Store&body=${text}`);
+  };
+
   return (
     <View style={styles.container}>
-      
-      {/* STEP 1: SEARCH BAR & SCAN BUTTON */}
-      {!selectedProduct && (
-        <>
-          <View style={styles.searchContainer}>
-            <Searchbar
-              placeholder="Search code or name..."
-              onChangeText={executeSearch}
-              value={searchQuery}
-              style={styles.searchBar}
-              autoFocus
-            />
-            <Button 
-              mode="contained" 
-              icon="barcode-scan" 
-              onPress={() => setScannerVisible(true)}
-              style={styles.scanBtn}
-            >
-              Scan
-            </Button>
-          </View>
+      {/* SEARCH BAR */}
+      <View style={styles.searchContainer}>
+        <Searchbar placeholder="Scan code or type name..." onChangeText={executeSearch} value={searchQuery} style={styles.searchBar} autoFocus />
+        <Button mode="contained" icon="barcode-scan" onPress={() => setScannerVisible(true)} style={styles.scanBtn}>Scan</Button>
+      </View>
 
-          {/* THE MATCHING LIST */}
-          <ScrollView style={styles.resultsList}>
-            {searchResults.map((item) => (
-              <React.Fragment key={item.id}>
-                <List.Item
-                  title={item.name}
-                  description={`Code: ${item.code} | Stock: ${item.quantity} ${item.unit_name || ''}`}
-                  right={() => <Text style={styles.priceTag}>₹{item.price}</Text>}
-                  onPress={() => {
-                    // Tap to Select
-                    setSelectedProduct(item);
-                    setSellPrice(String(item.price)); 
-                    setSearchResults([]); 
-                    setSearchQuery(''); 
-                  }}
-                />
-                <Divider />
-              </React.Fragment>
-            ))}
-          </ScrollView>
-        </>
-      )}
-
-      {/* STEP 2: THE SALE PAGE */}
-      {selectedProduct && (
-        <Card style={styles.checkoutCard}>
-          <Card.Title 
-            title={selectedProduct.name} 
-            subtitle={`Available Stock: ${selectedProduct.quantity} ${selectedProduct.unit_name || ''}`}
-            right={(props) => (
-              <IconButton {...props} icon="close" onPress={() => setSelectedProduct(null)} />
+      {/* RESULTS / CART */}
+      {searchResults.length > 0 ? (
+        <ScrollView style={styles.resultsList}>
+          {searchResults.map((item) => (
+            <React.Fragment key={item.id}>
+              <List.Item title={item.name} description={`Code: ${item.code} | Stock: ${item.quantity}`} right={() => <Text style={styles.priceTag}>₹{item.price}</Text>} onPress={() => addToCart(item)} />
+              <Divider />
+            </React.Fragment>
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <ScrollView style={styles.cartContainer}>
+            {cart.length === 0 ? (
+              <Text style={styles.emptyText}>Cart is empty. Scan an item to begin.</Text>
+            ) : (
+              cart.map((item) => (
+                <Card key={item.id} style={styles.cartCard}>
+                  <Card.Title title={item.name} right={(props) => <IconButton {...props} icon="delete" iconColor="#d32f2f" onPress={() => removeFromCart(item.id)} />} />
+                  <Card.Content>
+                    <View style={styles.cartControls}>
+                      <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text variant="labelMedium">Price (₹)</Text>
+                        <TextInput mode="outlined" value={item.sellPrice} onChangeText={(val) => updateCartItem(item.id, 'sellPrice', val)} keyboardType="numeric" dense style={{ backgroundColor: '#fff' }} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text variant="labelMedium" style={{ textAlign: 'center' }}>Qty</Text>
+                        <View style={styles.qtyControls}>
+                          <IconButton icon="minus" size={18} onPress={() => updateCartItem(item.id, 'cartQty', String(Math.max(1, parseInt(item.cartQty) - 1)))} />
+                          <TextInput value={String(item.cartQty)} onChangeText={(val) => updateCartItem(item.id, 'cartQty', val)} keyboardType="numeric" dense style={styles.qtyInput} />
+                          <IconButton icon="plus" size={18} onPress={() => updateCartItem(item.id, 'cartQty', String(parseInt(item.cartQty) + 1))} />
+                        </View>
+                      </View>
+                      <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>₹{((parseFloat(item.sellPrice) || 0) * (parseInt(item.cartQty) || 1)).toLocaleString()}</Text>
+                      </View>
+                    </View>
+                  </Card.Content>
+                </Card>
+              ))
             )}
-          />
-          <Card.Content>
-            
-            <View style={styles.inputRow}>
-              <Text variant="titleMedium">Selling Price (₹):</Text>
-              <TextInput 
-                mode="outlined"
-                value={sellPrice}
-                onChangeText={setSellPrice}
-                keyboardType="numeric"
-                style={styles.priceInput}
-                dense
-              />
-            </View>
+          </ScrollView>
 
-            <View style={styles.inputRow}>
-              <Text variant="titleMedium">Quantity:</Text>
-              <View style={styles.qtyControls}>
-                <IconButton 
-                  icon="minus" 
-                  mode="outlined"
-                  onPress={() => setSellQuantity(String(Math.max(1, parseInt(sellQuantity) - 1)))}
-                />
-                <TextInput 
-                  value={String(sellQuantity)}
-                  onChangeText={setSellQuantity}
-                  keyboardType="numeric"
-                  style={styles.qtyInput}
-                  dense
-                />
-                <IconButton 
-                  icon="plus" 
-                  mode="outlined"
-                  onPress={() => setSellQuantity(String(parseInt(sellQuantity) + 1))}
-                />
+          {/* CHECKOUT TRIGGER */}
+          {cart.length > 0 && (
+            <View style={styles.footer}>
+              <View style={styles.totalRow}>
+                <Text variant="headlineSmall">Grand Total:</Text>
+                <Text variant="headlineSmall" style={styles.totalText}>₹{grandTotal.toLocaleString()}</Text>
               </View>
+              <Button mode="contained" buttonColor="#2e7d32" onPress={() => setCheckoutModalVisible(true)} style={styles.checkoutBtn}>
+                Proceed to Checkout ({cart.length} items)
+              </Button>
             </View>
-
-            <View style={styles.totalRow}>
-              <Text variant="titleLarge">Total:</Text>
-              <Text variant="headlineMedium" style={styles.totalText}>
-                ₹{((parseFloat(sellPrice) || 0) * (parseInt(sellQuantity) || 1)).toLocaleString()}
-              </Text>
-            </View>
-
-            <Button 
-              mode="contained" 
-              buttonColor="#2e7d32"
-              onPress={handleCheckout} 
-              loading={isProcessing}
-              disabled={isProcessing}
-              style={styles.checkoutBtn}
-            >
-              Confirm Sale
-            </Button>
-          </Card.Content>
-        </Card>
+          )}
+        </View>
       )}
 
-      {/* THE CAMERA MODAL */}
-      <BarcodeScannerModal
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScanSuccess={handleScanSuccess}
-      />
+      {/* --- NEW: CHECKOUT MODAL --- */}
+      <Modal visible={checkoutModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Text variant="titleLarge" style={{ marginBottom: 15, fontWeight: 'bold' }}>Customer Details</Text>
+            
+            <TextInput label="Customer Name *" value={customerName} onChangeText={setCustomerName} mode="outlined" style={styles.modalInput} />
+            <TextInput label="Mobile Number *" value={customerPhone} onChangeText={setCustomerPhone} mode="outlined" keyboardType="phone-pad" style={styles.modalInput} />
+            <TextInput label="GST Number (Optional)" value={customerGst} onChangeText={setCustomerGst} mode="outlined" autoCapitalize="characters" style={styles.modalInput} />
+
+            <View style={{ marginTop: 20 }}>
+              <Button mode="contained" buttonColor="#2e7d32" onPress={processCheckout} loading={isProcessing} style={{ marginBottom: 10 }}>Confirm Sale</Button>
+              <Button mode="outlined" onPress={() => setCheckoutModalVisible(false)} disabled={isProcessing}>Cancel</Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- NEW: SHARE RECEIPT MODAL --- */}
+      <Modal visible={shareModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Text variant="titleLarge" style={{ marginBottom: 10, textAlign: 'center', color: '#2e7d32', fontWeight: 'bold' }}>Sale Successful!</Text>
+            <Text style={{ marginBottom: 20, textAlign: 'center' }}>Share the invoice with {lastOrder?.customer?.name}</Text>
+            
+            <Button mode="contained" icon="whatsapp" buttonColor="#25D366" onPress={shareViaWhatsApp} style={styles.shareBtn}>Share via WhatsApp</Button>
+            <Button mode="contained" icon="send" buttonColor="#0088cc" onPress={shareViaTelegram} style={styles.shareBtn}>Share via Telegram</Button>
+            <Button mode="contained" icon="email" buttonColor="#ea4335" onPress={shareViaEmail} style={styles.shareBtn}>Share via Email</Button>
+            
+            <Button mode="text" onPress={() => setShareModalVisible(false)} style={{ marginTop: 10 }}>Skip / Close</Button>
+          </View>
+        </View>
+      </Modal>
+
+      <BarcodeScannerModal visible={scannerVisible} onClose={() => setScannerVisible(false)} onScanSuccess={handleScanSuccess} />
     </View>
   );
 }
@@ -232,12 +299,22 @@ const styles = StyleSheet.create({
   scanBtn: { height: 50, justifyContent: 'center', borderRadius: 8 },
   resultsList: { flex: 1, backgroundColor: '#fff', borderRadius: 8, elevation: 2 },
   priceTag: { fontSize: 16, fontWeight: 'bold', color: '#007AFF', alignSelf: 'center', marginRight: 10 },
-  checkoutCard: { backgroundColor: '#fff', elevation: 4 },
-  inputRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 12 },
-  priceInput: { width: 120, backgroundColor: '#fff', textAlign: 'right' },
-  qtyControls: { flexDirection: 'row', alignItems: 'center' },
-  qtyInput: { width: 60, textAlign: 'center', marginHorizontal: 8, backgroundColor: '#f0f0f0' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 15, borderTopWidth: 1, borderColor: '#eee', marginTop: 10 },
+  
+  cartContainer: { flex: 1 },
+  emptyText: { textAlign: 'center', marginTop: 40, color: '#888', fontSize: 16 },
+  cartCard: { backgroundColor: '#fff', elevation: 2, marginBottom: 12 },
+  cartControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  qtyControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  qtyInput: { width: 45, textAlign: 'center', backgroundColor: '#f0f0f0' },
+  
+  footer: { borderTopWidth: 1, borderColor: '#ddd', paddingTop: 16, marginTop: 8 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   totalText: { fontWeight: 'bold', color: '#2e7d32' },
-  checkoutBtn: { marginTop: 25, paddingVertical: 8 }
+  checkoutBtn: { paddingVertical: 8 },
+
+  // Modal Styles
+  modalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+  modalContainer: { backgroundColor: '#fff', padding: 20, borderRadius: 12, elevation: 5 },
+  modalInput: { marginBottom: 10, backgroundColor: '#fff' },
+  shareBtn: { paddingVertical: 5, marginBottom: 12 }
 });
