@@ -1,39 +1,59 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Modal, Linking } from 'react-native';
-import { Text, TextInput, Button, Card, Searchbar, IconButton, List, Divider } from 'react-native-paper';
-import api from '../api/client';
-import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import React, { useState } from "react";
+import {
+  Alert,
+  Linking,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import {
+  Button,
+  Card,
+  Divider,
+  IconButton,
+  List,
+  Searchbar,
+  Text,
+  TextInput,
+} from "react-native-paper";
+import api from "../api/client";
+import BarcodeScannerModal from "../components/BarcodeScannerModal";
 
 export default function SalesScreen() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [scannerVisible, setScannerVisible] = useState(false);
-  const [cart, setCart] = useState([]); 
+  const [cart, setCart] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // NEW: Customer Info States
+  // Customer Info States
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerGst, setCustomerGst] = useState('');
-  
-  // NEW: Share Receipt States
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerGst, setCustomerGst] = useState("");
+
+  // Share Receipt States
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
 
   // 1. Manual Search & Scanner Input
   const executeSearch = async (text) => {
-    const cleanText = text.replace(/[\r\n\t]/g, '').trim();
+    const cleanText = text.replace(/[\r\n\t]/g, "").trim();
     setSearchQuery(cleanText);
-    
+
     if (cleanText.length < 2) {
-      setSearchResults([]); 
+      setSearchResults([]);
       return;
     }
     try {
       const response = await api.get(`/search?query=${cleanText}`);
       const results = response.data;
-      if (results.length === 1 && results[0].code === cleanText) {
+      // Also check carton_code for exact match
+      if (
+        results.length === 1 &&
+        (results[0].code === cleanText || results[0].carton_code === cleanText)
+      ) {
         addToCart(results[0]);
       } else {
         setSearchResults(results);
@@ -44,10 +64,10 @@ export default function SalesScreen() {
   };
 
   const handleScanSuccess = async (scannedCode) => {
-    setScannerVisible(false); 
-    const cleanCode = scannedCode.replace(/[\r\n\t]/g, '').trim();
-    setSearchQuery(cleanCode); 
-    
+    setScannerVisible(false);
+    const cleanCode = scannedCode.replace(/[\r\n\t]/g, "").trim();
+    setSearchQuery(cleanCode);
+
     try {
       const response = await api.get(`/search?query=${cleanCode}`);
       const results = response.data;
@@ -61,96 +81,142 @@ export default function SalesScreen() {
     }
   };
 
-  // 2. Cart Management
+  // 2. Cart Management (🚨 UPDATED TO HANDLE BULK CARTONS)
   const addToCart = (product) => {
     if (product.quantity <= 0) {
       Alert.alert("Out of Stock", `${product.name} has 0 stock available!`);
       setSearchResults([]);
-      setSearchQuery('');
-      return; 
+      setSearchQuery("");
+      return;
     }
-    const existingItem = cart.find(item => item.id === product.id);
+
+    // Use the multiplier from the backend, default to 1 if it's a normal item
+    const qtyToAdd = product.scan_qty ? parseFloat(product.scan_qty) : 1;
+
+    const existingItem = cart.find((item) => item.id === product.id);
+
     if (existingItem) {
-      if (parseInt(existingItem.cartQty) < product.quantity) {
-        updateCartItem(product.id, 'cartQty', String(parseInt(existingItem.cartQty) + 1));
+      const newTotalQty = parseFloat(existingItem.cartQty) + qtyToAdd;
+
+      // Ensure adding this carton/item doesn't exceed total stock
+      if (newTotalQty <= product.quantity) {
+        updateCartItem(product.id, "cartQty", String(newTotalQty));
       } else {
-        Alert.alert("Stock Limit", `Only ${product.quantity} available.`);
+        Alert.alert(
+          "Stock Limit",
+          `Only ${product.quantity} available in stock. Cannot add ${qtyToAdd} more.`,
+        );
       }
     } else {
-      setCart([{ ...product, cartQty: "1", sellPrice: String(product.price) }, ...cart]);
+      // Ensure the carton itself doesn't contain more than what's physically in stock
+      if (qtyToAdd <= product.quantity) {
+        setCart([
+          {
+            ...product,
+            cartQty: String(qtyToAdd),
+            sellPrice: String(product.price),
+          },
+          ...cart,
+        ]);
+      } else {
+        Alert.alert(
+          "Stock Limit",
+          `Only ${product.quantity} available, but carton scans as ${qtyToAdd}.`,
+        );
+      }
     }
+
     setSearchResults([]);
-    setSearchQuery('');
+    setSearchQuery("");
   };
 
-  const updateCartItem = (id, field, value) => {
+ const updateCartItem = (id, field, value) => {
     setCart(cart.map(item => {
       if (item.id === id) {
-        if (field === 'cartQty' && parseInt(value) > item.quantity) {
-          Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
-          return { ...item, cartQty: String(item.quantity) };
+        
+        // 🚨 NEW: Block decimals for pcs, dozen, and pack as they type
+        if (field === 'cartQty') {
+          const integerOnlyUnits = [6, 7, 8];
+          const isIntegerOnly = integerOnlyUnits.includes(Number(item.unit_id));
+          
+          // If they type a dot (.) on a restricted unit, block it and warn them
+          if (isIntegerOnly && value.includes('.')) {
+            Alert.alert("Whole Numbers Only", `You cannot sell fractions of ${item.unit_name || 'this item'}.`);
+            return item; // Ignore the keystroke
+          }
+
+          // Existing stock limit check
+          if (parseFloat(value) > item.quantity) {
+            Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
+            return { ...item, cartQty: String(item.quantity) };
+          }
         }
+
         return { ...item, [field]: value };
       }
       return item;
     }));
   };
 
-  const removeFromCart = (id) => setCart(cart.filter(item => item.id !== id));
+  const removeFromCart = (id) => setCart(cart.filter((item) => item.id !== id));
 
   const grandTotal = cart.reduce((sum, item) => {
-    return sum + ((parseInt(item.cartQty) || 1) * (parseFloat(item.sellPrice) || 0));
+    return (
+      sum + (parseFloat(item.cartQty) || 1) * (parseFloat(item.sellPrice) || 0)
+    );
   }, 0);
 
-  // 3. Process Checkout (Modified to submit Customer Data)
+  // 3. Process Checkout
   const processCheckout = async () => {
     if (!customerName || !customerPhone) {
-      Alert.alert('Required', 'Please enter at least the Customer Name and Phone Number.');
+      Alert.alert(
+        "Required",
+        "Please enter at least the Customer Name and Phone Number.",
+      );
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Stringify customer object so it saves cleanly to the database text/JSON field
       const customerDataString = JSON.stringify({
         name: customerName,
         phone: customerPhone,
-        gst: customerGst
+        gst: customerGst,
       });
 
       const payload = {
-        items: cart.map(item => ({
+        items: cart.map((item) => ({
           productId: item.id,
-          quantity: parseInt(item.cartQty) || 1,
+          quantity: parseFloat(item.cartQty) || 1,
           unitPrice: parseFloat(item.sellPrice) || 0,
-          totalAmount: (parseFloat(item.sellPrice) || 0) * (parseInt(item.cartQty) || 1)
+          totalAmount:
+            (parseFloat(item.sellPrice) || 0) * (parseFloat(item.cartQty) || 1),
         })),
-        paymentMethod: 'CASH',
-        customerInfo: customerDataString
+        paymentMethod: "CASH",
+        customerInfo: customerDataString,
       };
 
-      await api.post('/sales/bulk', payload);
-      
-      // Save order details to generate the text receipt
+      await api.post("/sales/bulk", payload);
+
       setLastOrder({
         items: cart,
         total: grandTotal,
-        customer: { name: customerName, phone: customerPhone, gst: customerGst }
+        customer: {
+          name: customerName,
+          phone: customerPhone,
+          gst: customerGst,
+        },
       });
 
-      // Reset Cart & Close Checkout Modal
       setCart([]);
       setCheckoutModalVisible(false);
-      setCustomerName('');
-      setCustomerPhone('');
-      setCustomerGst('');
-      
-      // Open Share Modal
+      setCustomerName("");
+      setCustomerPhone("");
+      setCustomerGst("");
       setShareModalVisible(true);
-
     } catch (error) {
-      Alert.alert('Error', 'Failed to process checkout.');
+      Alert.alert("Error", "Failed to process checkout.");
     } finally {
       setIsProcessing(false);
     }
@@ -162,8 +228,8 @@ export default function SalesScreen() {
     let text = `*INVOICE*\nCustomer: ${lastOrder.customer.name}\n`;
     if (lastOrder.customer.gst) text += `GST: ${lastOrder.customer.gst}\n`;
     text += `----------------------\n`;
-    lastOrder.items.forEach(item => {
-      text += `${item.name} x ${item.cartQty} = ₹${(item.sellPrice * item.cartQty)}\n`;
+    lastOrder.items.forEach((item) => {
+      text += `${item.name} x ${item.cartQty} = ₹${item.sellPrice * item.cartQty}\n`;
     });
     text += `----------------------\n`;
     text += `*Total: ₹${lastOrder.total}*\n`;
@@ -173,8 +239,9 @@ export default function SalesScreen() {
 
   const shareViaWhatsApp = () => {
     const text = encodeURIComponent(generateBillText());
-    // Prepend +91 to the number (Assumes Indian numbers)
-    Linking.openURL(`whatsapp://send?phone=91${lastOrder.customer.phone}&text=${text}`);
+    Linking.openURL(
+      `whatsapp://send?phone=91${lastOrder.customer.phone}&text=${text}`,
+    );
   };
 
   const shareViaTelegram = () => {
@@ -191,8 +258,21 @@ export default function SalesScreen() {
     <View style={styles.container}>
       {/* SEARCH BAR */}
       <View style={styles.searchContainer}>
-        <Searchbar placeholder="Scan code or type name..." onChangeText={executeSearch} value={searchQuery} style={styles.searchBar} autoFocus />
-        <Button mode="contained" icon="barcode-scan" onPress={() => setScannerVisible(true)} style={styles.scanBtn}>Scan</Button>
+        <Searchbar
+          placeholder="Scan code or type name..."
+          onChangeText={executeSearch}
+          value={searchQuery}
+          style={styles.searchBar}
+          autoFocus
+        />
+        <Button
+          mode="contained"
+          icon="barcode-scan"
+          onPress={() => setScannerVisible(true)}
+          style={styles.scanBtn}
+        >
+          Scan
+        </Button>
       </View>
 
       {/* RESULTS / CART */}
@@ -200,7 +280,12 @@ export default function SalesScreen() {
         <ScrollView style={styles.resultsList}>
           {searchResults.map((item) => (
             <React.Fragment key={item.id}>
-              <List.Item title={item.name} description={`Code: ${item.code} | Stock: ${item.quantity}`} right={() => <Text style={styles.priceTag}>₹{item.price}</Text>} onPress={() => addToCart(item)} />
+              <List.Item
+                title={item.name}
+                description={`Code: ${item.code} | Stock: ${item.quantity}`}
+                right={() => <Text style={styles.priceTag}>₹{item.price}</Text>}
+                onPress={() => addToCart(item)}
+              />
               <Divider />
             </React.Fragment>
           ))}
@@ -209,27 +294,96 @@ export default function SalesScreen() {
         <View style={{ flex: 1 }}>
           <ScrollView style={styles.cartContainer}>
             {cart.length === 0 ? (
-              <Text style={styles.emptyText}>Cart is empty. Scan an item to begin.</Text>
+              <Text style={styles.emptyText}>
+                Cart is empty. Scan an item to begin.
+              </Text>
             ) : (
               cart.map((item) => (
                 <Card key={item.id} style={styles.cartCard}>
-                  <Card.Title title={item.name} right={(props) => <IconButton {...props} icon="delete" iconColor="#d32f2f" onPress={() => removeFromCart(item.id)} />} />
+                  <Card.Title
+                    title={item.name}
+                    right={(props) => (
+                      <IconButton
+                        {...props}
+                        icon="delete"
+                        iconColor="#d32f2f"
+                        onPress={() => removeFromCart(item.id)}
+                      />
+                    )}
+                  />
                   <Card.Content>
                     <View style={styles.cartControls}>
                       <View style={{ flex: 1, marginRight: 10 }}>
                         <Text variant="labelMedium">Price (₹)</Text>
-                        <TextInput mode="outlined" value={item.sellPrice} onChangeText={(val) => updateCartItem(item.id, 'sellPrice', val)} keyboardType="numeric" dense style={{ backgroundColor: '#fff' }} />
+                        <TextInput
+                          mode="outlined"
+                          value={String(item.sellPrice)}
+                          onChangeText={(val) =>
+                            updateCartItem(item.id, "sellPrice", val)
+                          }
+                          keyboardType="numeric"
+                          dense
+                          style={{ backgroundColor: "#fff" }}
+                        />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text variant="labelMedium" style={{ textAlign: 'center' }}>Qty</Text>
+                        <Text
+                          variant="labelMedium"
+                          style={{ textAlign: "center" }}
+                        >
+                          Qty
+                        </Text>
                         <View style={styles.qtyControls}>
-                          <IconButton icon="minus" size={18} onPress={() => updateCartItem(item.id, 'cartQty', String(Math.max(1, parseInt(item.cartQty) - 1)))} />
-                          <TextInput value={String(item.cartQty)} onChangeText={(val) => updateCartItem(item.id, 'cartQty', val)} keyboardType="numeric" dense style={styles.qtyInput} />
-                          <IconButton icon="plus" size={18} onPress={() => updateCartItem(item.id, 'cartQty', String(parseInt(item.cartQty) + 1))} />
+                          <IconButton
+                            icon="minus"
+                            size={18}
+                            onPress={() =>
+                              updateCartItem(
+                                item.id,
+                                "cartQty",
+                                String(Math.max(1, parseInt(item.cartQty) - 1)),
+                              )
+                            }
+                          />
+                          <TextInput
+                            value={String(item.cartQty)}
+                            onChangeText={(val) =>
+                              updateCartItem(item.id, "cartQty", val)
+                            }
+                            keyboardType="numeric"
+                            dense
+                            style={styles.qtyInput}
+                          />
+                          <IconButton
+                            icon="plus"
+                            size={18}
+                            onPress={() =>
+                              updateCartItem(
+                                item.id,
+                                "cartQty",
+                                String(parseInt(item.cartQty) + 1),
+                              )
+                            }
+                          />
                         </View>
                       </View>
-                      <View style={{ flex: 1, alignItems: 'flex-end', justifyContent: 'center' }}>
-                        <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>₹{((parseFloat(item.sellPrice) || 0) * (parseInt(item.cartQty) || 1)).toLocaleString()}</Text>
+                      <View
+                        style={{
+                          flex: 1,
+                          alignItems: "flex-end",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          variant="titleMedium"
+                          style={{ fontWeight: "bold" }}
+                        >
+                          ₹
+                          {(
+                            (parseFloat(item.sellPrice) || 0) *
+                            (parseFloat(item.cartQty) || 1)
+                          ).toLocaleString()}
+                        </Text>
                       </View>
                     </View>
                   </Card.Content>
@@ -243,9 +397,16 @@ export default function SalesScreen() {
             <View style={styles.footer}>
               <View style={styles.totalRow}>
                 <Text variant="headlineSmall">Grand Total:</Text>
-                <Text variant="headlineSmall" style={styles.totalText}>₹{grandTotal.toLocaleString()}</Text>
+                <Text variant="headlineSmall" style={styles.totalText}>
+                  ₹{grandTotal.toLocaleString()}
+                </Text>
               </View>
-              <Button mode="contained" buttonColor="#2e7d32" onPress={() => setCheckoutModalVisible(true)} style={styles.checkoutBtn}>
+              <Button
+                mode="contained"
+                buttonColor="#2e7d32"
+                onPress={() => setCheckoutModalVisible(true)}
+                style={styles.checkoutBtn}
+              >
                 Proceed to Checkout ({cart.length} items)
               </Button>
             </View>
@@ -253,68 +414,210 @@ export default function SalesScreen() {
         </View>
       )}
 
-      {/* --- NEW: CHECKOUT MODAL --- */}
-      <Modal visible={checkoutModalVisible} animationType="slide" transparent={true}>
+      {/* --- CHECKOUT MODAL --- */}
+      <Modal
+        visible={checkoutModalVisible}
+        animationType="slide"
+        transparent={true}
+      >
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
-            <Text variant="titleLarge" style={{ marginBottom: 15, fontWeight: 'bold' }}>Customer Details</Text>
-            
-            <TextInput label="Customer Name *" value={customerName} onChangeText={setCustomerName} mode="outlined" style={styles.modalInput} />
-            <TextInput label="Mobile Number *" value={customerPhone} onChangeText={setCustomerPhone} mode="outlined" keyboardType="phone-pad" style={styles.modalInput} />
-            <TextInput label="GST Number (Optional)" value={customerGst} onChangeText={setCustomerGst} mode="outlined" autoCapitalize="characters" style={styles.modalInput} />
+            <Text
+              variant="titleLarge"
+              style={{ marginBottom: 15, fontWeight: "bold" }}
+            >
+              Customer Details
+            </Text>
+
+            <TextInput
+              label="Customer Name *"
+              value={customerName}
+              onChangeText={setCustomerName}
+              mode="outlined"
+              style={styles.modalInput}
+            />
+            <TextInput
+              label="Mobile Number *"
+              value={customerPhone}
+              onChangeText={setCustomerPhone}
+              mode="outlined"
+              keyboardType="phone-pad"
+              style={styles.modalInput}
+            />
+            <TextInput
+              label="GST Number (Optional)"
+              value={customerGst}
+              onChangeText={setCustomerGst}
+              mode="outlined"
+              autoCapitalize="characters"
+              style={styles.modalInput}
+            />
 
             <View style={{ marginTop: 20 }}>
-              <Button mode="contained" buttonColor="#2e7d32" onPress={processCheckout} loading={isProcessing} style={{ marginBottom: 10 }}>Confirm Sale</Button>
-              <Button mode="outlined" onPress={() => setCheckoutModalVisible(false)} disabled={isProcessing}>Cancel</Button>
+              <Button
+                mode="contained"
+                buttonColor="#2e7d32"
+                onPress={processCheckout}
+                loading={isProcessing}
+                style={{ marginBottom: 10 }}
+              >
+                Confirm Sale
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => setCheckoutModalVisible(false)}
+                disabled={isProcessing}
+              >
+                Cancel
+              </Button>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* --- NEW: SHARE RECEIPT MODAL --- */}
-      <Modal visible={shareModalVisible} animationType="fade" transparent={true}>
+      {/* --- SHARE RECEIPT MODAL --- */}
+      <Modal
+        visible={shareModalVisible}
+        animationType="fade"
+        transparent={true}
+      >
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
-            <Text variant="titleLarge" style={{ marginBottom: 10, textAlign: 'center', color: '#2e7d32', fontWeight: 'bold' }}>Sale Successful!</Text>
-            <Text style={{ marginBottom: 20, textAlign: 'center' }}>Share the invoice with {lastOrder?.customer?.name}</Text>
-            
-            <Button mode="contained" icon="whatsapp" buttonColor="#25D366" onPress={shareViaWhatsApp} style={styles.shareBtn}>Share via WhatsApp</Button>
-            <Button mode="contained" icon="send" buttonColor="#0088cc" onPress={shareViaTelegram} style={styles.shareBtn}>Share via Telegram</Button>
-            <Button mode="contained" icon="email" buttonColor="#ea4335" onPress={shareViaEmail} style={styles.shareBtn}>Share via Email</Button>
-            
-            <Button mode="text" onPress={() => setShareModalVisible(false)} style={{ marginTop: 10 }}>Skip / Close</Button>
+            <Text
+              variant="titleLarge"
+              style={{
+                marginBottom: 10,
+                textAlign: "center",
+                color: "#2e7d32",
+                fontWeight: "bold",
+              }}
+            >
+              Sale Successful!
+            </Text>
+            <Text style={{ marginBottom: 20, textAlign: "center" }}>
+              Share the invoice with {lastOrder?.customer?.name}
+            </Text>
+
+            <Button
+              mode="contained"
+              icon="whatsapp"
+              buttonColor="#25D366"
+              onPress={shareViaWhatsApp}
+              style={styles.shareBtn}
+            >
+              Share via WhatsApp
+            </Button>
+            <Button
+              mode="contained"
+              icon="send"
+              buttonColor="#0088cc"
+              onPress={shareViaTelegram}
+              style={styles.shareBtn}
+            >
+              Share via Telegram
+            </Button>
+            <Button
+              mode="contained"
+              icon="email"
+              buttonColor="#ea4335"
+              onPress={shareViaEmail}
+              style={styles.shareBtn}
+            >
+              Share via Email
+            </Button>
+
+            <Button
+              mode="text"
+              onPress={() => setShareModalVisible(false)}
+              style={{ marginTop: 10 }}
+            >
+              Skip / Close
+            </Button>
           </View>
         </View>
       </Modal>
 
-      <BarcodeScannerModal visible={scannerVisible} onClose={() => setScannerVisible(false)} onScanSuccess={handleScanSuccess} />
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScanSuccess={handleScanSuccess}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#f8f9fa' },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  searchBar: { flex: 1, marginRight: 8, backgroundColor: '#fff' },
-  scanBtn: { height: 50, justifyContent: 'center', borderRadius: 8 },
-  resultsList: { flex: 1, backgroundColor: '#fff', borderRadius: 8, elevation: 2 },
-  priceTag: { fontSize: 16, fontWeight: 'bold', color: '#007AFF', alignSelf: 'center', marginRight: 10 },
-  
+  container: { flex: 1, padding: 16, backgroundColor: "#f8f9fa" },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  searchBar: { flex: 1, marginRight: 8, backgroundColor: "#fff" },
+  scanBtn: { height: 50, justifyContent: "center", borderRadius: 8 },
+  resultsList: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    elevation: 2,
+  },
+  priceTag: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#007AFF",
+    alignSelf: "center",
+    marginRight: 10,
+  },
+
   cartContainer: { flex: 1 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#888', fontSize: 16 },
-  cartCard: { backgroundColor: '#fff', elevation: 2, marginBottom: 12 },
-  cartControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  qtyControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  qtyInput: { width: 45, textAlign: 'center', backgroundColor: '#f0f0f0' },
-  
-  footer: { borderTopWidth: 1, borderColor: '#ddd', paddingTop: 16, marginTop: 8 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  totalText: { fontWeight: 'bold', color: '#2e7d32' },
+  emptyText: {
+    textAlign: "center",
+    marginTop: 40,
+    color: "#888",
+    fontSize: 16,
+  },
+  cartCard: { backgroundColor: "#fff", elevation: 2, marginBottom: 12 },
+  cartControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  qtyControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyInput: { width: 45, textAlign: "center", backgroundColor: "#f0f0f0" },
+
+  footer: {
+    borderTopWidth: 1,
+    borderColor: "#ddd",
+    paddingTop: 16,
+    marginTop: 8,
+  },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  totalText: { fontWeight: "bold", color: "#2e7d32" },
   checkoutBtn: { paddingVertical: 8 },
 
   // Modal Styles
-  modalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalContainer: { backgroundColor: '#fff', padding: 20, borderRadius: 12, elevation: 5 },
-  modalInput: { marginBottom: 10, backgroundColor: '#fff' },
-  shareBtn: { paddingVertical: 5, marginBottom: 12 }
+  modalBackground: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  modalInput: { marginBottom: 10, backgroundColor: "#fff" },
+  shareBtn: { paddingVertical: 5, marginBottom: 12 },
 });

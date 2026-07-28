@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
-import { Text, Searchbar, Chip, Card, ActivityIndicator, Button } from 'react-native-paper';
+import { Text, Searchbar, Chip, Card, ActivityIndicator, Button, Divider } from 'react-native-paper';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../api/client';
 
@@ -45,7 +45,6 @@ export default function SalesHistoryScreen() {
   };
 
   useEffect(() => {
-    // Only auto-fetch if it's NOT custom. Custom requires them to hit the "Go" button.
     if (activeFilter !== 'Custom') {
       fetchSalesHistory();
     }
@@ -53,13 +52,20 @@ export default function SalesHistoryScreen() {
 
   // PICKER HANDLERS
   const onChangeStart = (event, selectedDate) => {
-    setShowStartPicker(Platform.OS === 'ios'); // iOS pickers can stay open, Android must close
+    setShowStartPicker(Platform.OS === 'ios'); 
     if (selectedDate) setStartDate(selectedDate);
   };
 
   const onChangeEnd = (event, selectedDate) => {
     setShowEndPicker(Platform.OS === 'ios');
     if (selectedDate) setEndDate(selectedDate);
+  };
+
+  // HELPER: Safely parse customer_info in case it comes back as a JSON string
+  const getCustomer = (info) => {
+    if (!info) return {};
+    if (typeof info === 'object') return info;
+    try { return JSON.parse(info); } catch (e) { return {}; }
   };
 
   return (
@@ -88,7 +94,7 @@ export default function SalesHistoryScreen() {
         </ScrollView>
       </View>
 
-      {/* THE NEW NATIVE DATE PICKER UI */}
+      {/* THE CUSTOM DATE PICKER UI */}
       {activeFilter === 'Custom' && (
         <View style={styles.customDateContainer}>
           <TouchableOpacity style={styles.dateBtnWrapper} onPress={() => setShowStartPicker(true)}>
@@ -130,19 +136,59 @@ export default function SalesHistoryScreen() {
         ) : sales.length === 0 ? (
           <Text style={styles.emptyText}>No sales found for this period.</Text>
         ) : (
-          sales.map((sale) => (
-            <Card key={sale.id} style={styles.saleCard}>
-              <Card.Title 
-                title={`Invoice: ${sale.id.substring(0, 8)}`} 
-                subtitle={`Date: ${new Date(sale.created_at).toLocaleDateString()}`}
-                right={() => <Text style={styles.amountText}>₹{sale.total_amount}</Text>}
-              />
-              <Card.Content>
-                <Text variant="bodyMedium">Customer: {sale.customer_info?.name || 'Walk-in'}</Text>
-                <Text variant="bodySmall" style={{ color: '#666' }}>Payment: {sale.payment_method}</Text>
-              </Card.Content>
-            </Card>
-          ))
+          sales.map((sale) => {
+            const customer = getCustomer(sale.customer_info);
+            const formattedDate = new Date(sale.created_at).toLocaleString('en-IN', {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+            });
+
+            return (
+              <Card key={sale.id} style={styles.saleCard}>
+                <Card.Content>
+                  
+                  {/* HEADER: Product & Total */}
+                  <View style={styles.rowBetween}>
+                    <View style={{ flex: 1 }}>
+                      <Text variant="titleMedium" style={{ fontWeight: 'bold', color: '#333' }}>
+                        {sale.product_name || 'Unknown Item'}
+                      </Text>
+                      <Text variant="bodySmall" style={{ color: '#666' }}>
+                        Code: {sale.product_code || 'N/A'}
+                      </Text>
+                    </View>
+                    <Text style={styles.amountText}>
+                      ₹{parseFloat(sale.total_amount).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+
+                  <Divider style={styles.divider} />
+
+                  {/* MATH BREAKDOWN */}
+                  <View style={styles.rowBetween}>
+                    <Text variant="bodyMedium" style={{ color: '#555' }}>
+                      {/* parseFloat cleanly drops trailing zeroes from 2.500 -> 2.5 */}
+                      Qty: {parseFloat(sale.quantity)} × ₹{parseFloat(sale.unit_price).toLocaleString('en-IN')}
+                    </Text>
+                    <View style={styles.paymentBadge}>
+                      <Text style={styles.paymentText}>{sale.payment_method}</Text>
+                    </View>
+                  </View>
+
+                  {/* CUSTOMER & DATE INFO */}
+                  <View style={styles.customerBox}>
+                    <Text variant="labelMedium" style={{ color: '#444' }}>
+                      👤 {customer.name || 'Walk-in'} {customer.phone ? `| 📞 ${customer.phone}` : ''} {customer.gst ? `| GST: ${customer.gst}` : ''}
+                    </Text>
+                    <Text variant="labelSmall" style={{ color: '#888', marginTop: 4 }}>
+                      🕒 {formattedDate}  |  Inv: {sale.id.substring(0, 8)}
+                    </Text>
+                  </View>
+
+                </Card.Content>
+              </Card>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -162,8 +208,18 @@ const styles = StyleSheet.create({
   dateValue: { fontSize: 14, fontWeight: 'bold', color: '#333' },
   goBtn: { justifyContent: 'center', borderRadius: 8, height: 48 },
 
+  // List Styles
   listContainer: { paddingBottom: 40 },
-  saleCard: { marginBottom: 10, backgroundColor: '#fff', elevation: 2 },
-  amountText: { fontSize: 16, fontWeight: 'bold', color: '#2e7d32', marginRight: 16 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#888', fontSize: 16 }
+  emptyText: { textAlign: 'center', marginTop: 40, color: '#888', fontSize: 16 },
+  
+  // New Card Styles
+  saleCard: { marginBottom: 12, backgroundColor: '#fff', elevation: 2 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  amountText: { fontSize: 18, fontWeight: 'bold', color: '#2e7d32' },
+  divider: { marginVertical: 10, backgroundColor: '#e0e0e0' },
+  
+  paymentBadge: { backgroundColor: '#e3f2fd', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  paymentText: { color: '#1565c0', fontSize: 12, fontWeight: 'bold' },
+  
+  customerBox: { marginTop: 12, backgroundColor: '#f9f9f9', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#eee' },
 });

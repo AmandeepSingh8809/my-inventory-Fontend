@@ -133,7 +133,7 @@ export default function DashboardScreen({ setActiveTab }) {
                 <Card key={product.id} style={styles.itemCard}>
                   <Card.Title 
                     title={product.name} 
-                    subtitle={`Code: ${product.code} | Stock: ${product.quantity} units`} 
+                    subtitle={`Code: ${product.code} | Stock: ${product.quantity} ${product.unit_name} `} 
                   />
                   <Card.Content>
                     <Text variant="titleMedium">Selling Price: ₹{product.price}</Text>
