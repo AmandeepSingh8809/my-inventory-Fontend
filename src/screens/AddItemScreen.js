@@ -1,142 +1,247 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, TextInput, Button, Chip } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { TextInput, Button, Text, Card, Surface, IconButton } from 'react-native-paper';
 import api from '../api/client';
-import BarcodeScannerModal from '../components/BarcodeScannerModal'; 
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function AddItemScreen({ setActiveTab }) {
+  // Core Product States
+  const [code, setCode] = useState('');
   const [name, setName] = useState('');
-  const [itemCode, setItemCode] = useState('');
-  const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
+  const [quantity, setQuantity] = useState('');
   
-  // NEW: State for the selected unit. Default to 1 (Assuming 1 = 'pcs' in your DB)
-  const [unitId, setUnitId] = useState(1); 
+  // NEW: Purchase Detail States
+  const [supplier, setSupplier] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+
+  // UI States
   const [scannerVisible, setScannerVisible] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isExistingItem, setIsExistingItem] = useState(false);
 
-  // Hardcoded units for the UI (These should match the IDs in your PostgreSQL 'unit' table)
-  const availableUnits = [
-    { id: 1, label: 'pcs' },
-    { id: 2, label: 'kg' },
-    { id: 3, label: 'liter' },
-    { id: 4, label: 'box' }
-  ];
+  // 1. Lookup Logic for Barcodes
+  const lookupBarcode = async (searchCode) => {
+    try {
+      const response = await api.get(`/search?query=${searchCode}`);
+      const results = response.data;
+      
+      // Find an exact match for the barcode
+      const exactMatch = results.find(item => item.code === searchCode);
+      
+      if (exactMatch) {
+        // Auto-fill the fields!
+        setName(exactMatch.name);
+        setPrice(String(exactMatch.price || ''));
+        // Database might return cost_price or costPrice depending on your exact SQL select
+        setCostPrice(String(exactMatch.costPrice || exactMatch.cost_price || '')); 
+        setIsExistingItem(true);
+      } else {
+        setIsExistingItem(false);
+      }
+    } catch (error) {
+      console.log("Lookup failed, assuming new item.");
+      setIsExistingItem(false);
+    }
+  };
 
-  const saveProduct = async () => {
-    if (!name || !itemCode || !price) {
-      Alert.alert('Missing Details', 'Please fill out Name, Code, and Price.');
+  // 2. Scanner Handlers
+  const handleScanSuccess = (scannedCode) => {
+    setScannerVisible(false);
+    const cleanCode = scannedCode.replace(/[\r\n\t]/g, '').trim();
+    setCode(cleanCode);
+    lookupBarcode(cleanCode);
+  };
+
+  // 3. Manual Text Input Handler (for physical scanners)
+  const handleCodeChange = (text) => {
+    const cleanText = text.replace(/[\r\n\t]/g, '').trim();
+    setCode(cleanText);
+    if (cleanText.length > 2) {
+      lookupBarcode(cleanText);
+    } else {
+      setIsExistingItem(false);
+    }
+  };
+
+  // 4. Submit to Backend
+  const handleSubmit = async () => {
+    if (!code || !name || !price || !quantity) {
+      Alert.alert("Missing Fields", "Code, Name, Price, and Quantity are required.");
       return;
     }
 
-    setIsSaving(true);
+    setLoading(true);
 
     try {
-      const newProductPayload = {
+      // 🚨 Ensure the URL matches your server routes (e.g. /addProduct or /api/product)
+      await api.post('/addProduct', {
+        code,
         name,
-        code: itemCode,
-        quantity: Number(quantity || 0),     // Cast to Number for the DB
-        price: Number(price),
-        costPrice: Number(costPrice || 0),
-        unit_id: unitId,                     // Pass the selected unit_id to the backend
-        category: 'General',
-      };
+        price: parseFloat(price),
+        costPrice: parseFloat(costPrice || 0),
+        quantity: parseInt(quantity),
+        unit_id: '1', // Defaulting to 1 if you aren't using a dropdown yet
+        supplier: supplier.trim() || 'Walk-in / Unknown',
+        invoiceNumber: invoiceNumber.trim() || null
+      });
 
-      await api.post('/addProduct', newProductPayload);
-
-      Alert.alert('Success', `${name} has been added to your inventory!`);
-
-      // Reset form
+      Alert.alert(
+        "Success", 
+        isExistingItem ? "Stock updated successfully!" : "New product created successfully!"
+      );
+      
+      // Reset the form
+      setCode('');
       setName('');
-      setItemCode('');
-      setQuantity('');
       setPrice('');
       setCostPrice('');
-      setUnitId(1);
-      setActiveTab('Home');
-
+      setQuantity('');
+      setSupplier('');
+      setInvoiceNumber('');
+      setIsExistingItem(false);
+      
     } catch (error) {
-      console.error("Error saving product:", error);
-      Alert.alert('Connection Error', 'Could not save the product.');
+      console.error(error);
+      Alert.alert("Error", "Failed to save the product.");
     } finally {
-      setIsSaving(false);
+      setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text variant="headlineSmall" style={styles.screenTitle}>New Product Entry</Text>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView contentContainerStyle={styles.container}>
+        
+        <Card style={styles.card}>
+          <Card.Content>
+            
+            {/* STATUS BADGE */}
+            {isExistingItem ? (
+              <Surface style={styles.restockBadge}>
+                <Text style={styles.restockText}>📦 Restocking Existing Item</Text>
+              </Surface>
+            ) : (
+              <Surface style={styles.newBadge}>
+                <Text style={styles.newText}>✨ Creating New Item</Text>
+              </Surface>
+            )}
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-        <TextInput
-          mode="outlined"
-          label="Item Code / Barcode"
-          value={itemCode}
-          onChangeText={setItemCode}
-          style={{ flex: 1, marginRight: 8, backgroundColor: '#fff' }}
-        />
-        <Button mode="contained" onPress={() => setScannerVisible(true)} style={{ height: 50, justifyContent: 'center' }}>
-          Scan
-        </Button>
-      </View>
+            <View style={styles.scanRow}>
+              <TextInput 
+                label="Barcode / S/N *"
+                value={code}
+                onChangeText={handleCodeChange}
+                mode="outlined"
+                style={styles.flexInput}
+                autoFocus
+              />
+              <IconButton 
+                icon="barcode-scan" 
+                mode="contained"
+                containerColor="#007AFF"
+                iconColor="#fff"
+                size={30}
+                onPress={() => setScannerVisible(true)} 
+              />
+            </View>
 
-      <TextInput mode="outlined" label="Product Name" value={name} onChangeText={setName} style={styles.input} />
-      
-      {/* Quantity Input */}
-      <TextInput 
-        mode="outlined" 
-        label="Opening Quantity" 
-        value={quantity} 
-        onChangeText={setQuantity} 
-        keyboardType="numeric" 
-        style={styles.input} 
-      />
+            <TextInput 
+              label="Product Name *"
+              value={name}
+              onChangeText={setName}
+              mode="outlined"
+              style={styles.input}
+            />
 
-      {/* UNIT SELECTOR CHIPS */}
-      <Text variant="labelLarge" style={styles.unitLabel}>Select Unit:</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-        {availableUnits.map((unit) => (
-          <Chip
-            key={unit.id}
-            selected={unitId === unit.id}
-            onPress={() => setUnitId(unit.id)}
-            style={styles.chip}
-            showSelectedOverlay
-          >
-            {unit.label}
-          </Chip>
-        ))}
+            <View style={styles.row}>
+              <TextInput 
+                label="Selling Price (₹) *"
+                value={price}
+                onChangeText={setPrice}
+                mode="outlined"
+                keyboardType="numeric"
+                style={[styles.flexInput, { marginRight: 10 }]}
+              />
+              <TextInput 
+                label="Cost Price (₹)"
+                value={costPrice}
+                onChangeText={setCostPrice}
+                mode="outlined"
+                keyboardType="numeric"
+                style={styles.flexInput}
+              />
+            </View>
+
+            <TextInput 
+              label="Quantity Added *"
+              value={quantity}
+              onChangeText={setQuantity}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+            />
+
+            <View style={styles.divider} />
+            <Text variant="titleMedium" style={styles.sectionTitle}>Purchase Details (Optional)</Text>
+
+            <TextInput 
+              label="Supplier / Vendor"
+              value={supplier}
+              onChangeText={setSupplier}
+              mode="outlined"
+              style={styles.input}
+            />
+
+            <TextInput 
+              label="Invoice / Bill Number"
+              value={invoiceNumber}
+              onChangeText={setInvoiceNumber}
+              mode="outlined"
+              style={styles.input}
+            />
+
+            <Button 
+              mode="contained" 
+              onPress={handleSubmit} 
+              loading={loading}
+              disabled={loading}
+              style={styles.submitBtn}
+              contentStyle={{ paddingVertical: 8 }}
+            >
+              {isExistingItem ? "Update Stock" : "Save New Product"}
+            </Button>
+
+          </Card.Content>
+        </Card>
+
       </ScrollView>
 
-      <TextInput mode="outlined" label="Selling Price (₹)" value={price} onChangeText={setPrice} keyboardType="numeric" style={styles.input} />
-      <TextInput mode="outlined" label="Cost Price (₹) - Optional" value={costPrice} onChangeText={setCostPrice} keyboardType="numeric" style={styles.input} />
-
-      <Button 
-        mode="contained" 
-        onPress={saveProduct} 
-        loading={isSaving}
-        disabled={isSaving}
-        style={styles.saveBtn}
-      >
-        {isSaving ? 'Saving...' : 'Save Product'}
-      </Button>
-
-      <BarcodeScannerModal
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScanSuccess={(scannedCode) => setItemCode(scannedCode)}
+      <BarcodeScannerModal 
+        visible={scannerVisible} 
+        onClose={() => setScannerVisible(false)} 
+        onScanSuccess={handleScanSuccess} 
       />
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  screenTitle: { fontWeight: 'bold', marginBottom: 20 },
+  container: { padding: 16, paddingBottom: 80 },
+  card: { backgroundColor: '#fff', elevation: 3 },
+  restockBadge: { backgroundColor: '#e8f5e9', padding: 8, borderRadius: 6, marginBottom: 16, alignItems: 'center' },
+  restockText: { color: '#2e7d32', fontWeight: 'bold' },
+  newBadge: { backgroundColor: '#e3f2fd', padding: 8, borderRadius: 6, marginBottom: 16, alignItems: 'center' },
+  newText: { color: '#1565c0', fontWeight: 'bold' },
+  scanRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   input: { marginBottom: 12, backgroundColor: '#fff' },
-  unitLabel: { marginBottom: 8, color: '#555', fontWeight: 'bold' },
-  chipRow: { marginBottom: 16, maxHeight: 40 },
-  chip: { marginRight: 8, backgroundColor: '#e0e0e0' },
-  saveBtn: { marginTop: 10, paddingVertical: 6, marginBottom: 40 }
+  flexInput: { flex: 1, backgroundColor: '#fff' },
+  divider: { height: 1, backgroundColor: '#e0e0e0', marginVertical: 16 },
+  sectionTitle: { marginBottom: 12, color: '#555', fontWeight: 'bold' },
+  submitBtn: { marginTop: 10, borderRadius: 8, backgroundColor: '#007AFF' }
 });
