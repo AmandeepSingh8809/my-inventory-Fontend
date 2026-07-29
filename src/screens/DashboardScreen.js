@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { Text, Searchbar, Chip, Card, FAB } from 'react-native-paper';
-import api from '../api/client';
+import api, { getImageUrl } from '../api/client';
+
 
 export default function DashboardScreen({ setActiveTab }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -10,7 +11,6 @@ export default function DashboardScreen({ setActiveTab }) {
   const [hotSelling, setHotSelling] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   
-  // NEW: Daily Stats States
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [todayItemsSold, setTodayItemsSold] = useState(0);
 
@@ -21,7 +21,6 @@ export default function DashboardScreen({ setActiveTab }) {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      // 1. Fetch Today's Sales Stats
       try {
         const statsResponse = await api.get('/sales/today');
         setTodayRevenue(statsResponse.data.data.totalRevenue || 0);
@@ -30,7 +29,6 @@ export default function DashboardScreen({ setActiveTab }) {
         console.warn("Stats API error:", err);
       }
 
-      // 2. Fetch All Products
       try {
         const allResponse = await api.get('/allProduct');
         setAllProducts(allResponse.data);
@@ -39,7 +37,6 @@ export default function DashboardScreen({ setActiveTab }) {
         setError("Could not load products. Is the Node server running?");
       }
 
-      // 3. Fetch Hot Selling
       try {
         const hotResponse = await api.get('/hot-selling');
         setHotSelling(hotResponse.data);
@@ -57,7 +54,7 @@ export default function DashboardScreen({ setActiveTab }) {
   return (
     <View style={styles.container}>
       
-      {/* NEW: DAILY STATS SUMMARY CARD */}
+      {/* DAILY STATS SUMMARY CARD */}
       <Card style={styles.statsCard}>
         <Card.Content style={styles.statsContent}>
           <View style={styles.statBox}>
@@ -112,7 +109,21 @@ export default function DashboardScreen({ setActiveTab }) {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
                 {hotSelling.map((product) => (
                   <Card key={product.id} style={styles.hotCard}>
-                    <Card.Content>
+                    {/* 📸 HOT SELLING IMAGE */}
+                    {product.image_url ? (
+                      <Image 
+                        source={{ uri: getImageUrl(product.image_url) }} 
+                        style={styles.hotImage} 
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.hotImageFallback}>
+                        <Text style={styles.hotFallbackText}>
+                          {product.name ? product.name.charAt(0).toUpperCase() : '?'}
+                        </Text>
+                      </View>
+                    )}
+                    <Card.Content style={{ paddingTop: 8 }}>
                       <Text variant="titleSmall" numberOfLines={1}>{product.name}</Text>
                       <Text variant="bodySmall">{product.salesCount} Units Sold</Text>
                       <Text variant="labelLarge" style={{ color: '#007AFF' }}>₹{product.price}</Text>
@@ -134,6 +145,21 @@ export default function DashboardScreen({ setActiveTab }) {
                   <Card.Title 
                     title={product.name} 
                     subtitle={`Code: ${product.code} | Stock: ${product.quantity} ${product.unit_name} `} 
+                    /* 📸 LIST ITEM IMAGE */
+                    left={() => 
+                      product.image_url ? (
+                        <Image 
+                          source={{ uri: getImageUrl(product.image_url) }} 
+                          style={styles.listImage} 
+                        />
+                      ) : (
+                        <View style={styles.listFallback}>
+                          <Text style={styles.listFallbackText}>
+                            {product.name ? product.name.charAt(0).toUpperCase() : '?'}
+                          </Text>
+                        </View>
+                      )
+                    }
                   />
                   <Card.Content>
                     <Text variant="titleMedium">Selling Price: ₹{product.price}</Text>
@@ -158,21 +184,31 @@ export default function DashboardScreen({ setActiveTab }) {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#f4f6f8' },
   
-  // STATS CARD STYLES
   statsCard: { marginBottom: 16, backgroundColor: '#ffffff', elevation: 4, borderRadius: 12 },
   statsContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
   statBox: { flex: 1, alignItems: 'center' },
   verticalDivider: { width: 1, height: '80%', backgroundColor: '#e0e0e0', marginHorizontal: 10 },
   statLabel: { color: '#666', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  statValuePositive: { color: '#2e7d32', fontWeight: 'bold' }, // Green for revenue
-  statValueNeutral: { color: '#007AFF', fontWeight: 'bold' },  // Blue for item count
+  statValuePositive: { color: '#2e7d32', fontWeight: 'bold' }, 
+  statValueNeutral: { color: '#007AFF', fontWeight: 'bold' },  
 
   searchBar: { marginBottom: 12, backgroundColor: '#fff', elevation: 2 },
   chipRow: { marginBottom: 16, maxHeight: 40 },
   chip: { marginRight: 8, backgroundColor: '#e0e0e0' },
   sectionHeader: { marginVertical: 12, fontWeight: 'bold', color: '#333' },
-  hotCard: { width: 160, marginRight: 12, backgroundColor: '#fff', elevation: 2 },
+  
+  // 📸 Hot Selling Image Styles
+  hotCard: { width: 160, marginRight: 12, backgroundColor: '#fff', elevation: 2, overflow: 'hidden' },
+  hotImage: { height: 100, width: '100%', backgroundColor: '#eee' },
+  hotImageFallback: { height: 100, width: '100%', backgroundColor: '#e3f2fd', justifyContent: 'center', alignItems: 'center' },
+  hotFallbackText: { fontSize: 32, fontWeight: 'bold', color: '#1565c0' },
+
+  // 📸 List Image Styles
   itemCard: { marginBottom: 12, backgroundColor: '#fff', elevation: 2 },
+  listImage: { width: 45, height: 45, borderRadius: 8 },
+  listFallback: { width: 45, height: 45, borderRadius: 8, backgroundColor: '#e3f2fd', justifyContent: 'center', alignItems: 'center' },
+  listFallbackText: { fontSize: 20, fontWeight: 'bold', color: '#1565c0' },
+
   fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#007AFF' },
   emptyBox: { padding: 20, alignItems: 'center', marginTop: 20 },
   emptyText: { color: '#666', fontSize: 16, fontWeight: 'bold' },

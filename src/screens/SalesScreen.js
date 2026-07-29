@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import api, { getImageUrl } from "../api/client";
+
 import {
   Alert,
   Linking,
@@ -6,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  Image,
 } from "react-native";
 import {
   Button,
@@ -17,7 +20,6 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
-import api from "../api/client";
 import BarcodeScannerModal from "../components/BarcodeScannerModal";
 
 export default function SalesScreen() {
@@ -130,32 +132,38 @@ export default function SalesScreen() {
     setSearchQuery("");
   };
 
- const updateCartItem = (id, field, value) => {
-    setCart(cart.map(item => {
-      if (item.id === id) {
-        
-        // 🚨 NEW: Block decimals for pcs, dozen, and pack as they type
-        if (field === 'cartQty') {
-          const integerOnlyUnits = [6, 7, 8];
-          const isIntegerOnly = integerOnlyUnits.includes(Number(item.unit_id));
-          
-          // If they type a dot (.) on a restricted unit, block it and warn them
-          if (isIntegerOnly && value.includes('.')) {
-            Alert.alert("Whole Numbers Only", `You cannot sell fractions of ${item.unit_name || 'this item'}.`);
-            return item; // Ignore the keystroke
+  const updateCartItem = (id, field, value) => {
+    setCart(
+      cart.map((item) => {
+        if (item.id === id) {
+          // 🚨 NEW: Block decimals for pcs, dozen, and pack as they type
+          if (field === "cartQty") {
+            const integerOnlyUnits = [6, 7, 8];
+            const isIntegerOnly = integerOnlyUnits.includes(
+              Number(item.unit_id),
+            );
+
+            // If they type a dot (.) on a restricted unit, block it and warn them
+            if (isIntegerOnly && value.includes(".")) {
+              Alert.alert(
+                "Whole Numbers Only",
+                `You cannot sell fractions of ${item.unit_name || "this item"}.`,
+              );
+              return item; // Ignore the keystroke
+            }
+
+            // Existing stock limit check
+            if (parseFloat(value) > item.quantity) {
+              Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
+              return { ...item, cartQty: String(item.quantity) };
+            }
           }
 
-          // Existing stock limit check
-          if (parseFloat(value) > item.quantity) {
-            Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
-            return { ...item, cartQty: String(item.quantity) };
-          }
+          return { ...item, [field]: value };
         }
-
-        return { ...item, [field]: value };
-      }
-      return item;
-    }));
+        return item;
+      }),
+    );
   };
 
   const removeFromCart = (id) => setCart(cart.filter((item) => item.id !== id));
@@ -283,9 +291,45 @@ export default function SalesScreen() {
               <List.Item
                 title={item.name}
                 description={`Code: ${item.code} | Stock: ${item.quantity}`}
+                left={() =>
+                  item.image_url ? (
+                    <Image
+                      source={{ uri: getImageUrl(item.image_url) }}
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: 8,
+                        marginLeft: 10,
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: 8,
+                        backgroundColor: "#e3f2fd",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        marginLeft: 10,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 20,
+                          fontWeight: "bold",
+                          color: "#1565c0",
+                        }}
+                      >
+                        {item.name ? item.name.charAt(0).toUpperCase() : "?"}
+                      </Text>
+                    </View>
+                  )
+                }
                 right={() => <Text style={styles.priceTag}>₹{item.price}</Text>}
                 onPress={() => addToCart(item)}
               />
+
               <Divider />
             </React.Fragment>
           ))}
@@ -372,6 +416,9 @@ export default function SalesScreen() {
                           flex: 1,
                           alignItems: "flex-end",
                           justifyContent: "center",
+                          marginLeft: -45,
+                          marginRight: 30,
+                          marginTop: 15,
                         }}
                       >
                         <Text
@@ -385,6 +432,40 @@ export default function SalesScreen() {
                           ).toLocaleString()}
                         </Text>
                       </View>
+                      {/* Replace your single <Image /> tag around line 269 with this safety check! */}
+                      {item.image_url ? (
+                        <Image
+                          source={{ uri: getImageUrl(item.image_url) }}
+                          style={{
+                            width: 70,
+                            height: 70,
+                            borderRadius: 8,
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 70,
+                            height: 70,
+                            borderRadius: 8,
+                            backgroundColor: "#e3f2fd",
+                            justifyContent: "center",
+                            alignItems: "center",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 24,
+                              fontWeight: "bold",
+                              color: "#1565c0",
+                            }}
+                          >
+                            {item.name
+                              ? item.name.charAt(0).toUpperCase()
+                              : "?"}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </Card.Content>
                 </Card>
