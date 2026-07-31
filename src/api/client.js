@@ -1,12 +1,12 @@
 import axios from 'axios';
 
 // 1. Your API Server (Where Node.js runs)
-export const API_BASE_URL = 'http://192.168.1.84:5000'; // Change to production API URL later
+export const API_BASE_URL = 'http://192.168.1.160:5000'; // Change to production API URL later
 
 // 2. Your Image Server (CDN, AWS S3, or a separate static server)
 // For local development, this can just be the same as API_BASE_URL.
 // For production, change this to your cloud storage URL!
-export const IMAGE_BASE_URL = 'http://192.168.1.84:5000'; 
+export const IMAGE_BASE_URL = 'http://192.168.1.160:5000'; 
 
 // 3. Create your Axios API client pointing ONLY to the API server
 const api = axios.create({

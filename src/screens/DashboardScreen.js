@@ -13,7 +13,8 @@ export default function DashboardScreen({ setActiveTab }) {
   
   const [todayRevenue, setTodayRevenue] = useState(0);
   const [todayItemsSold, setTodayItemsSold] = useState(0);
-
+  const [todayProfit,setTodayProfit]= useState(0);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -25,6 +26,7 @@ export default function DashboardScreen({ setActiveTab }) {
         const statsResponse = await api.get('/sales/today');
         setTodayRevenue(statsResponse.data.data.totalRevenue || 0);
         setTodayItemsSold(statsResponse.data.data.totalItemsSold || 0);
+        setTodayProfit(statsResponse.data.data.totalProfit || 0);
       } catch (err) {
         console.warn("Stats API error:", err);
       }
@@ -70,6 +72,13 @@ export default function DashboardScreen({ setActiveTab }) {
             <Text variant="titleSmall" style={styles.statLabel}>Items Sold</Text>
             <Text variant="headlineMedium" style={styles.statValueNeutral}>
               {todayItemsSold}
+            </Text>
+          </View>
+          <View style={styles.verticalDivider} />
+          <View style={styles.statBox}>
+            <Text variant="titleSmall" style={styles.statLabel}>Today's profit</Text>
+            <Text variant="headlineMedium" style={styles.statValueNeutral}>
+              {todayProfit}
             </Text>
           </View>
         </Card.Content>
@@ -137,7 +146,7 @@ export default function DashboardScreen({ setActiveTab }) {
             {allProducts.length === 0 ? (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyText}>Your inventory is empty!</Text>
-                <Text style={styles.emptySubtext}>Tap the + button below to add your first product.</Text>
+                
               </View>
             ) : (
               allProducts.map((product) => (
@@ -171,11 +180,7 @@ export default function DashboardScreen({ setActiveTab }) {
         )}
       </ScrollView>
 
-      <FAB
-        icon="plus"
-        style={styles.fab}
-        onPress={() => setActiveTab('AddItem')}
-      />
+    
      
     </View>
   );

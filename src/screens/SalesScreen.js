@@ -51,15 +51,26 @@ export default function SalesScreen() {
     try {
       const response = await api.get(`/search?query=${cleanText}`);
       const results = response.data;
-      // Also check carton_code for exact match
-      if (
-        results.length === 1 &&
-        (results[0].code === cleanText || results[0].carton_code === cleanText)
-      ) {
-        addToCart(results[0]);
-      } else {
-        setSearchResults(results);
+
+      if (results.length === 1) {
+        const item = results[0];
+
+        // Bulletproof database extraction
+        const dbCode = item.code ? String(item.code).trim().toLowerCase() : "";
+        const dbCarton = item.carton_code || item.cartonCode;
+        const cleanDbCarton = dbCarton
+          ? String(dbCarton).trim().toLowerCase()
+          : "";
+        const searchTarget = cleanText.toLowerCase();
+
+        if (dbCode === searchTarget || cleanDbCarton === searchTarget) {
+          // Exact barcode match!
+          addToCart(item, cleanText);
+          return;
+        }
       }
+
+      setSearchResults(results);
     } catch (error) {
       console.error("Search failed:", error);
     }
@@ -74,7 +85,7 @@ export default function SalesScreen() {
       const response = await api.get(`/search?query=${cleanCode}`);
       const results = response.data;
       if (results.length === 1) {
-        addToCart(results[0]);
+        addToCart(results[0], cleanCode);
       } else {
         setSearchResults(results);
       }
@@ -83,8 +94,8 @@ export default function SalesScreen() {
     }
   };
 
-  // 2. Cart Management (🚨 UPDATED TO HANDLE BULK CARTONS)
-  const addToCart = (product) => {
+  // 2. Cart Management (🚨 UPGRADED: BULLETPROOF CARTON LOGIC)
+  const addToCart = (product, scannedBarcode = null, forceCarton = false) => {
     if (product.quantity <= 0) {
       Alert.alert("Out of Stock", `${product.name} has 0 stock available!`);
       setSearchResults([]);
@@ -92,15 +103,32 @@ export default function SalesScreen() {
       return;
     }
 
-    // Use the multiplier from the backend, default to 1 if it's a normal item
-    const qtyToAdd = product.scan_qty ? parseFloat(product.scan_qty) : 1;
+    let qtyToAdd = 1; // Default to 1 piece (Loose)
+
+    // 🚨 BULLETPROOF CHECK: Handles camelCase, string vs numbers, and invisible spaces
+    const dbCartonCode = product.carton_code || product.cartonCode || "";
+    const dbCartonMultiplier =
+      product.carton_multiplier || product.cartonMultiplier || 1;
+
+    const scannedStr = scannedBarcode
+      ? String(scannedBarcode).trim().toLowerCase()
+      : "";
+    const cartonStr = dbCartonCode
+      ? String(dbCartonCode).trim().toLowerCase()
+      : "";
+
+    if (
+      forceCarton ||
+      (scannedStr !== "" && cartonStr !== "" && scannedStr === cartonStr)
+    ) {
+      qtyToAdd = parseFloat(dbCartonMultiplier) || 1;
+    }
 
     const existingItem = cart.find((item) => item.id === product.id);
 
     if (existingItem) {
       const newTotalQty = parseFloat(existingItem.cartQty) + qtyToAdd;
 
-      // Ensure adding this carton/item doesn't exceed total stock
       if (newTotalQty <= product.quantity) {
         updateCartItem(product.id, "cartQty", String(newTotalQty));
       } else {
@@ -110,7 +138,6 @@ export default function SalesScreen() {
         );
       }
     } else {
-      // Ensure the carton itself doesn't contain more than what's physically in stock
       if (qtyToAdd <= product.quantity) {
         setCart([
           {
@@ -123,7 +150,7 @@ export default function SalesScreen() {
       } else {
         Alert.alert(
           "Stock Limit",
-          `Only ${product.quantity} available, but carton scans as ${qtyToAdd}.`,
+          `Only ${product.quantity} available, but you tried to add a box of ${qtyToAdd}.`,
         );
       }
     }
@@ -136,29 +163,25 @@ export default function SalesScreen() {
     setCart(
       cart.map((item) => {
         if (item.id === id) {
-          // 🚨 NEW: Block decimals for pcs, dozen, and pack as they type
           if (field === "cartQty") {
-            const integerOnlyUnits = [6, 7, 8];
+            const integerOnlyUnits = [6, 7, 8]; // pcs, dozen, pack
             const isIntegerOnly = integerOnlyUnits.includes(
               Number(item.unit_id),
             );
 
-            // If they type a dot (.) on a restricted unit, block it and warn them
             if (isIntegerOnly && value.includes(".")) {
               Alert.alert(
                 "Whole Numbers Only",
                 `You cannot sell fractions of ${item.unit_name || "this item"}.`,
               );
-              return item; // Ignore the keystroke
+              return item;
             }
 
-            // Existing stock limit check
             if (parseFloat(value) > item.quantity) {
               Alert.alert("Stock Limit", `Only ${item.quantity} available.`);
               return { ...item, cartQty: String(item.quantity) };
             }
           }
-
           return { ...item, [field]: value };
         }
         return item;
@@ -290,7 +313,7 @@ export default function SalesScreen() {
             <React.Fragment key={item.id}>
               <List.Item
                 title={item.name}
-                description={`Code: ${item.code} | Stock: ${item.quantity}`}
+                description={`Stock: ${item.quantity}`}
                 left={() =>
                   item.image_url ? (
                     <Image
@@ -326,10 +349,46 @@ export default function SalesScreen() {
                     </View>
                   )
                 }
-                right={() => <Text style={styles.priceTag}>₹{item.price}</Text>}
-                onPress={() => addToCart(item)}
-              />
+                /* 🚨 UPGRADED: Added a dedicated "Add Box" button if it's a carton item! */
+                right={() => {
+                  const hasCarton =
+                    item.carton_multiplier || item.cartonMultiplier;
+                  const cartonQty = parseFloat(hasCarton);
 
+                  return (
+                    <View
+                      style={{
+                        alignItems: "flex-end",
+                        justifyContent: "center",
+                        marginRight: 10,
+                      }}
+                    >
+                      <Text style={styles.priceTag}>₹{item.price}</Text>
+                      {cartonQty > 1 && (
+                        <Button
+                          mode="outlined"
+                          compact
+                          style={{
+                            marginTop: 5,
+                            borderColor: "#007AFF",
+                            borderRadius: 4,
+                          }}
+                          labelStyle={{
+                            fontSize: 10,
+                            marginHorizontal: 8,
+                            marginVertical: 2,
+                          }}
+                          onPress={() => addToCart(item, null, true)}
+                        >
+                          + Box ({cartonQty})
+                        </Button>
+                      )}
+                    </View>
+                  );
+                }}
+                /* Tapping the row itself adds 1 loose item */
+                onPress={() => addToCart(item, searchQuery)}
+              />
               <Divider />
             </React.Fragment>
           ))}
@@ -432,7 +491,6 @@ export default function SalesScreen() {
                           ).toLocaleString()}
                         </Text>
                       </View>
-                      {/* Replace your single <Image /> tag around line 269 with this safety check! */}
                       {item.image_url ? (
                         <Image
                           source={{ uri: getImageUrl(item.image_url) }}
@@ -548,6 +606,8 @@ export default function SalesScreen() {
                 mode="outlined"
                 onPress={() => setCheckoutModalVisible(false)}
                 disabled={isProcessing}
+                textColor='#007AFF'
+
               >
                 Cancel
               </Button>
@@ -611,6 +671,7 @@ export default function SalesScreen() {
               mode="text"
               onPress={() => setShareModalVisible(false)}
               style={{ marginTop: 10 }}
+              textColor="#0088cc"
             >
               Skip / Close
             </Button>
@@ -635,7 +696,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   searchBar: { flex: 1, marginRight: 8, backgroundColor: "#fff" },
-  scanBtn: { height: 50, justifyContent: "center", borderRadius: 8 },
+  scanBtn: {
+    height: 50,
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#007AFF",
+  },
   resultsList: {
     flex: 1,
     backgroundColor: "#fff",
@@ -646,8 +712,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: "#007AFF",
-    alignSelf: "center",
-    marginRight: 10,
+    textAlign: "right",
   },
 
   cartContainer: { flex: 1 },

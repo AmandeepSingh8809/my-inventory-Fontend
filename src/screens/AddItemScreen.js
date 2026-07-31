@@ -10,7 +10,10 @@ export default function AddItemScreen({ setActiveTab }) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
-  const [quantity, setQuantity] = useState('');
+  
+  // 🚨 UPGRADED: Renamed to strictly track MANUAL additions
+  const [manualQuantity, setManualQuantity] = useState('');
+  
   const [unitId, setUnitId] = useState('6'); 
 
   // Image State
@@ -53,7 +56,6 @@ export default function AddItemScreen({ setActiveTab }) {
   };
 
   const pickImage = async (type) => {
-    // Compress the image to keep uploads blazing fast (quality: 0.5)
     const options = {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -87,7 +89,7 @@ export default function AddItemScreen({ setActiveTab }) {
         setPrice(String(exactMatch.price || ''));
         setCostPrice(String(exactMatch.costPrice || exactMatch.cost_price || '')); 
         if (exactMatch.unit_id) setUnitId(String(exactMatch.unit_id));
-        if (exactMatch.carton_code === searchCode && exactMatch.carton_multiplier) setQuantity(String(exactMatch.carton_multiplier));
+        if (exactMatch.carton_code === searchCode && exactMatch.carton_multiplier) setManualQuantity(String(exactMatch.carton_multiplier));
         if (exactMatch.carton_code) setCartonCode(exactMatch.carton_code);
         if (exactMatch.carton_multiplier) setCartonMultiplier(String(exactMatch.carton_multiplier));
         setIsExistingItem(true);
@@ -109,11 +111,8 @@ export default function AddItemScreen({ setActiveTab }) {
     } 
     else if (activeScannerTarget === 'serials') {
       if (!scannedSerials.includes(cleanCode) && cleanCode !== code) {
-        setScannedSerials(prev => {
-          const newList = [...prev, cleanCode];
-          setQuantity(String(newList.length)); 
-          return newList;
-        });
+        // 🚨 UPGRADED: Only append to the serial list. Do NOT touch manual quantity!
+        setScannedSerials(prev => [...prev, cleanCode]);
       }
     } 
     else {
@@ -125,22 +124,23 @@ export default function AddItemScreen({ setActiveTab }) {
   };
 
   const removeSerial = (serialToRemove) => {
-    setScannedSerials(prev => {
-      const newList = prev.filter(s => s !== serialToRemove);
-      setQuantity(String(newList.length || '')); 
-      return newList;
-    });
+    // 🚨 UPGRADED: Only remove from the serial list. Do NOT touch manual quantity!
+    setScannedSerials(prev => prev.filter(s => s !== serialToRemove));
   };
 
   // --- 🚀 SUBMIT DATA ---
   const handleSubmit = async () => {
-    if (!code || !name || !price || (!quantity && scannedSerials.length === 0)) {
-      Alert.alert("Missing Fields", "Code, Name, Price, and Quantity are required.");
+    const scannedQty = scannedSerials.length;
+    const extraQty = parseFloat(manualQuantity) || 0;
+    const finalQuantity = scannedQty + extraQty;
+
+    if (!code || !name || !price || finalQuantity === 0) {
+      Alert.alert("Missing Fields", "Code, Name, Price, and a Quantity > 0 are required.");
       return;
     }
 
     const integerOnlyUnits = ['6', '7', '8']; 
-    if (integerOnlyUnits.includes(String(unitId)) && !Number.isInteger(parseFloat(quantity))) {
+    if (integerOnlyUnits.includes(String(unitId)) && !Number.isInteger(finalQuantity)) {
       Alert.alert("Invalid Quantity", "Pieces, dozens, and packs must be whole numbers.");
       return;
     }
@@ -148,25 +148,23 @@ export default function AddItemScreen({ setActiveTab }) {
     setLoading(true);
 
     try {
-      const finalQuantity = scannedSerials.length > 0 ? scannedSerials.length : parseFloat(quantity);
-
-      // 🚨 NEW: Create FormData instead of JSON!
       const formData = new FormData();
       formData.append('code', code);
       formData.append('name', name);
       formData.append('price', price);
       formData.append('costPrice', costPrice || '0');
+      
+      // 🚨 UPGRADED: Pass the accurately calculated combined final quantity
       formData.append('quantity', String(finalQuantity));
+      
       formData.append('unit_id', unitId);
       formData.append('supplier', supplier.trim() || 'Walk-in / Unknown');
       formData.append('invoiceNumber', invoiceNumber.trim() || '');
       formData.append('cartonCode', cartonCode.trim() || '');
       formData.append('cartonMultiplier', cartonMultiplier || '1');
       
-      // Convert arrays to string so FormData can send them
       formData.append('serials', JSON.stringify(scannedSerials));
 
-      // Append Image File if it exists
       if (imageUri) {
         const filename = imageUri.split('/').pop();
         const match = /\.(\w+)$/.exec(filename);
@@ -175,7 +173,6 @@ export default function AddItemScreen({ setActiveTab }) {
         formData.append('image', { uri: imageUri, name: filename, type });
       }
 
-      // Send via Axios using multipart/form-data headers
       await api.post('/addProduct', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -183,7 +180,7 @@ export default function AddItemScreen({ setActiveTab }) {
       Alert.alert("Success", isExistingItem ? "Stock updated successfully!" : "New product created successfully!");
       
       // Reset Form
-      setCode(''); setName(''); setPrice(''); setCostPrice(''); setQuantity('');
+      setCode(''); setName(''); setPrice(''); setCostPrice(''); setManualQuantity('');
       setUnitId('6'); setCartonCode(''); setCartonMultiplier('');
       setSupplier(''); setInvoiceNumber(''); setIsExistingItem(false);
       setScannedSerials([]); setImageUri(null);
@@ -239,13 +236,43 @@ export default function AddItemScreen({ setActiveTab }) {
               <TextInput label="Cost Price (₹)" value={costPrice} onChangeText={setCostPrice} mode="outlined" keyboardType="numeric" style={styles.flexInput} />
             </View>
 
-            <TextInput 
-              label={scannedSerials.length > 0 ? `Quantity (Auto: ${scannedSerials.length})` : "Quantity Added *"} 
-              value={quantity} onChangeText={setQuantity} mode="outlined" keyboardType="numeric" style={styles.input} 
-              disabled={scannedSerials.length > 0} 
-            />
+            {/* 🚨 UPGRADED UI: The POS Style Quantity Breakdown */}
+            <View style={styles.divider} />
+            <Text variant="titleMedium" style={styles.sectionTitle}>Stock Entry</Text>
+            
+            <View style={styles.quantityBreakdownRow}>
+              {/* Scanned Box */}
+              <View style={styles.qtyBoxStat}>
+                <Text style={styles.qtyBoxLabel}>Scanned</Text>
+                <Text style={styles.qtyBoxValueScanned}>{scannedSerials.length}</Text>
+              </View>
+              
+              <Text style={styles.mathSymbol}>+</Text>
+              
+              {/* Manual Input Box */}
+              <View style={styles.qtyBoxInput}>
+                <TextInput 
+                  label="Manual/Extra" 
+                  value={manualQuantity} 
+                  onChangeText={setManualQuantity} 
+                  mode="outlined" 
+                  keyboardType="numeric" 
+                  style={{ backgroundColor: '#fff' }}
+                />
+              </View>
+              
+              <Text style={styles.mathSymbol}>=</Text>
+              
+              {/* Total Box */}
+              <View style={styles.qtyBoxStatTotal}>
+                <Text style={styles.qtyBoxLabel}>Total</Text>
+                <Text style={styles.qtyBoxValueTotal}>
+                  {scannedSerials.length + (parseFloat(manualQuantity) || 0)}
+                </Text>
+              </View>
+            </View>
 
-            <Text variant="labelMedium" style={styles.unitLabel}>Select Unit *</Text>
+            <Text variant="labelMedium" style={[styles.unitLabel, {marginTop: 12}]}>Select Unit *</Text>
             <View style={styles.unitContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {unitList.map((u) => (
@@ -323,6 +350,17 @@ const styles = StyleSheet.create({
   flexInput: { flex: 1, backgroundColor: '#fff', marginRight: 8 },
   divider: { height: 1, backgroundColor: '#e0e0e0', marginVertical: 16 },
   sectionTitle: { marginBottom: 12, color: '#555', fontWeight: 'bold' },
+  
+  // Quantity Breakdown UI Styles
+  quantityBreakdownRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  qtyBoxStat: { flex: 1, alignItems: 'center', paddingVertical: 10, backgroundColor: '#f0f0f0', borderRadius: 8 },
+  qtyBoxInput: { flex: 1.5 },
+  qtyBoxStatTotal: { flex: 1, alignItems: 'center', paddingVertical: 10, backgroundColor: '#e8f5e9', borderRadius: 8 },
+  qtyBoxLabel: { color: '#555', fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  qtyBoxValueScanned: { fontSize: 22, fontWeight: 'bold', color: '#007AFF' },
+  qtyBoxValueTotal: { fontSize: 22, fontWeight: 'bold', color: '#2e7d32' },
+  mathSymbol: { fontSize: 20, marginHorizontal: 8, color: '#888' },
+
   unitLabel: { marginBottom: 8, color: '#555', fontWeight: 'bold' },
   unitContainer: { marginBottom: 8, flexDirection: 'row' },
   unitChip: { marginRight: 8 },
