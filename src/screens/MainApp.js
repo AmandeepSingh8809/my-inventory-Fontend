@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { act, useEffect, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Provider as PaperProvider, Text, Avatar, Surface, Divider, Icon } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,7 +11,7 @@ import AddItemScreen from './AddItemScreen';
 import SettingsScreen from './SettingsScreen';
 import LoadingScreen from './LoadingScreen';
 import LoginScreen from './LoginScreen';
-
+import RegisterScreen from './RegisterScreen';
 import SalesHistoryScreen from '../screens/SalesHistoryScreen';
 import PurchaseHistoryScreen from '../screens/PurchaseHistoryScreen';
 
@@ -249,7 +249,7 @@ function MainAppContent() {
     }
   };
 
-  const isAuthScreen = activeTab === 'Loading' || activeTab === 'Login';
+  const isAuthScreen = activeTab === 'Loading' || activeTab === 'Login' || activeTab=== 'Register';
 
   return (
     <PaperProvider>
@@ -281,9 +281,12 @@ function MainAppContent() {
           {activeTab === 'Login' && (
             <LoginScreen setActiveTab={(tab) => {
               setActiveTab(tab);
+              if(tab=='Home'){
               checkLoginStatus();
+              }
             }} />
           )}
+          {activeTab ==='Register'&&(<RegisterScreen setActiveTab={setActiveTab}/>)}
           {activeTab === 'Home' && <DashboardScreen setActiveTab={setActiveTab} />}
           {activeTab === 'Financials' && <FinancialsScreen />}
           {activeTab === 'SellItem' && <SalesScreen />}
