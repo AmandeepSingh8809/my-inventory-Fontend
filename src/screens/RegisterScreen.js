@@ -29,9 +29,7 @@ export default function RegisterScreen({ setActiveTab }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
-  const [shopName, setShopName] = useState('');
-  const [address, setAddress] = useState('');
-  const [pincode, setPincode] = useState('');
+
   const [password, setPassword] = useState('');
   
   const [secureText, setSecureText] = useState(true);
@@ -39,7 +37,7 @@ export default function RegisterScreen({ setActiveTab }) {
 
   const handleRegister = async () => {
     // Basic Validation
-    if (!firstName || !lastName || !username || !email || !mobile || !shopName || !address || !pincode || !password) {
+    if (!firstName || !lastName || !username || !email || !mobile  || !password) {
       Alert.alert('Missing Fields', 'Please fill out all the fields to create your account.');
       return;
     }
@@ -53,9 +51,6 @@ export default function RegisterScreen({ setActiveTab }) {
         username: username.trim().toLowerCase(),
         email: email.trim().toLowerCase(),
         mobile: mobile.trim(),
-        shopName: shopName.trim(),
-        address: address.trim(),
-        pincode: pincode.trim(),
         password: password,
       });
 
@@ -160,39 +155,9 @@ export default function RegisterScreen({ setActiveTab }) {
               style={styles.input}
             />
 
-            <TextInput
-              label="Shop Name"
-              value={shopName}
-              onChangeText={setShopName}
-              mode="outlined"
-              outlineColor={COLORS.border}
-              activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="storefront-outline" color={COLORS.subtext} />}
-              style={styles.input}
-            />
-
-            <TextInput
-              label="Full Address"
-              value={address}
-              onChangeText={setAddress}
-              mode="outlined"
-              outlineColor={COLORS.border}
-              activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="map-marker-outline" color={COLORS.subtext} />}
-              style={styles.input}
-            />
-
-            <TextInput
-              label="Pin Code"
-              value={pincode}
-              onChangeText={setPincode}
-              mode="outlined"
-              keyboardType="numeric"
-              outlineColor={COLORS.border}
-              activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="mailbox-outline" color={COLORS.subtext} />}
-              style={styles.input}
-            />
+           
+           
+           
 
             <TextInput
               label="Password"

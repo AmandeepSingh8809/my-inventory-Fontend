@@ -1,12 +1,10 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 🚨 NEW: Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 // 1. Your API Server (Where Node.js runs)
-export const API_BASE_URL = 'http://192.168.1.160:5000'; // Change to production API URL later
+export const API_BASE_URL = 'http://192.168.1.160:5000'; 
 
-// 2. Your Image Server (CDN, AWS S3, or a separate static server)
-// For local development, this can just be the same as API_BASE_URL.
-// For production, change this to your cloud storage URL!
+// 2. Your Image Server
 export const IMAGE_BASE_URL = 'http://192.168.1.160:5000'; 
 
 // 3. Create your Axios API client pointing ONLY to the API server
@@ -17,12 +15,16 @@ const api = axios.create({
 // 🚨 THE MAGIC: Axios Request Interceptor
 api.interceptors.request.use(
   async (config) => {
-    // Before the request is sent, grab the token from the phone's storage
+    // 1. Grab the token from the phone's storage
     const token = await AsyncStorage.getItem('userToken');
-    
-    // If a token exists, attach it to the Authorization header
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    // 🚨 NEW: 2. Grab the active shop code from the phone's storage
+    const activeShop = await AsyncStorage.getItem('activeShopCode');
+    if (activeShop) {
+      config.headers['x-shop-code'] = activeShop;
     }
     
     return config;
@@ -36,10 +38,8 @@ api.interceptors.request.use(
 export const getImageUrl = (imagePath) => {
   if (!imagePath) return null;
   
-  // If the path already includes http (e.g., an external Google Image link), return it directly
   if (imagePath.startsWith('http')) return imagePath; 
   
-  // Otherwise, attach your dedicated Image Server URL!
   return `${IMAGE_BASE_URL}${imagePath}`;
 };
 

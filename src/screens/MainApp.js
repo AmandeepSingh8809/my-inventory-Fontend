@@ -14,7 +14,7 @@ import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
 import SalesHistoryScreen from '../screens/SalesHistoryScreen';
 import PurchaseHistoryScreen from '../screens/PurchaseHistoryScreen';
-
+import AddShopScreen from './AddShopScreen';
 const COLORS = {
   primary: '#007AFF',
   primaryDark: '#005ecb',
@@ -172,6 +172,7 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('activeShopCode');
     await AsyncStorage.removeItem('userName');
     setActiveTab('Login');
     setIsDrawerOpen(false);
@@ -294,6 +295,7 @@ function MainAppContent() {
           {activeTab === 'SalesHistory' && <SalesHistoryScreen />}
           {activeTab === 'PurchaseHistory' && <PurchaseHistoryScreen />}
           {activeTab === 'Settings' && <SettingsScreen setActiveTab={setActiveTab} setIsDrawerOpen={setIsDrawerOpen} />}
+          {activeTab === 'AddShop' && <AddShopScreen setActiveTab={setActiveTab} />}
         </View>
 
         {/* Modular Bottom Bar */}
