@@ -15,6 +15,9 @@ import RegisterScreen from './RegisterScreen';
 import SalesHistoryScreen from '../screens/SalesHistoryScreen';
 import PurchaseHistoryScreen from '../screens/PurchaseHistoryScreen';
 import AddShopScreen from './AddShopScreen';
+import ForgotPasswordScreen from './ForgotPasswordScreen';
+import AddEmployeeScreen from './AddEmployeeScreen'; // 👈 1. Imported the new screen
+
 const COLORS = {
   primary: '#007AFF',
   primaryDark: '#005ecb',
@@ -29,18 +32,18 @@ const COLORS = {
   divider: '#eceef1',
 };
 
-// 🚨 Replaced 'Settings' with 'More'
 const TABS = [
   { key: 'Home', label: 'Dashboard', icon: 'view-dashboard' },
   { key: 'AddItem', label: 'Add Item', icon: 'plus-box' },
   { key: 'SellItem', label: 'Sale', icon: 'cart-arrow-up', isCenter: true },
   { key: 'Financials', label: 'Finance', icon: 'cash-multiple' },
-  { key: 'More', label: 'More', icon: 'menu' }, // Changed to 'More'
+  { key: 'More', label: 'More', icon: 'menu' },
 ];
 
 const OVERFLOW_TABS = [
   { key: 'SalesHistory', label: 'Sales Activity', icon: 'history' },
   { key: 'PurchaseHistory', label: 'Stock In Activity', icon: 'truck-delivery' },
+  { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' }, // 👈 2. Added to Drawer Menu
 ];
 
 // ==========================================
@@ -62,12 +65,10 @@ const TopHeader = ({ activeTab, setActiveTab, user, insets }) => {
 
   return (
     <Surface style={[styles.topHeader, { paddingTop: insets.top + 12 }]} elevation={2}>
-      {/* 🚨 Removed the 3-bar menu icon. Title now aligns to the left */}
       <Text variant="titleLarge" style={styles.headerTitle}>
         {getHeaderTitle()}
       </Text>
 
-      {/* 🚨 Avatar click routes directly to Settings */}
       <TouchableOpacity onPress={() => setActiveTab('Settings')}>
         <Avatar.Text
           size={38}
@@ -112,7 +113,6 @@ const BottomTabBar = ({ activeTab, setActiveTab, setIsDrawerOpen, bottomInset })
             style={styles.tabItem}
             activeOpacity={0.7}
             onPress={() => {
-              // 🚨 If 'More' is clicked, open drawer instead of changing tab state
               if (tab.key === 'More') {
                 setIsDrawerOpen(true);
               } else {
@@ -165,11 +165,6 @@ const DrawerListItem = ({ icon, label, isActive, dangerous, onPress }) => {
 const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
 
-  const goToDashboard = () => {
-    setActiveTab('Home');
-    setIsDrawerOpen(false);
-  };
-
   const handleLogout = async () => {
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('activeShopCode');
@@ -179,11 +174,8 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
   };
 
   return (
-    // 🚨 Added flexDirection: 'row-reverse' to slide in from the right
     <View style={[styles.drawerOverlay, { flexDirection: 'row-reverse' }]}>
       <Surface style={styles.drawerContentRight} elevation={5}>
-       
-
         <View style={styles.drawerHeaderCard}>
           <Avatar.Text size={52} label={getInitials(user.name)} style={styles.drawerAvatar} labelStyle={styles.drawerAvatarLabel} />
           <View style={styles.drawerHeaderText}>
@@ -222,7 +214,7 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
 };
 
 // ==========================================
-// 4. MAIN APP CONTENT (Cleaned Up)
+// 4. MAIN APP CONTENT
 // ==========================================
 function MainAppContent() {
   const insets = useSafeAreaInsets();
@@ -250,7 +242,8 @@ function MainAppContent() {
     }
   };
 
-  const isAuthScreen = activeTab === 'Loading' || activeTab === 'Login' || activeTab=== 'Register';
+  // 👈 3. Updated check to hide Top/Bottom bars for your full-page forms
+  const isAuthScreen = ['Loading', 'Login', 'Register', 'ForgotPassword', 'AddShop', 'AddEmployee'].includes(activeTab);
 
   return (
     <PaperProvider>
@@ -282,12 +275,12 @@ function MainAppContent() {
           {activeTab === 'Login' && (
             <LoginScreen setActiveTab={(tab) => {
               setActiveTab(tab);
-              if(tab=='Home'){
-              checkLoginStatus();
+              if(tab === 'Home'){
+                checkLoginStatus();
               }
             }} />
           )}
-          {activeTab ==='Register'&&(<RegisterScreen setActiveTab={setActiveTab}/>)}
+          {activeTab === 'Register' && <RegisterScreen setActiveTab={setActiveTab}/>}
           {activeTab === 'Home' && <DashboardScreen setActiveTab={setActiveTab} />}
           {activeTab === 'Financials' && <FinancialsScreen />}
           {activeTab === 'SellItem' && <SalesScreen />}
@@ -296,6 +289,8 @@ function MainAppContent() {
           {activeTab === 'PurchaseHistory' && <PurchaseHistoryScreen />}
           {activeTab === 'Settings' && <SettingsScreen setActiveTab={setActiveTab} setIsDrawerOpen={setIsDrawerOpen} />}
           {activeTab === 'AddShop' && <AddShopScreen setActiveTab={setActiveTab} />}
+          {activeTab === 'ForgotPassword' && <ForgotPasswordScreen setActiveTab={setActiveTab}/>}
+          {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />} {/* 👈 4. Added Route */}
         </View>
 
         {/* Modular Bottom Bar */}
@@ -327,7 +322,7 @@ const styles = StyleSheet.create({
   // Top bar
   topHeader: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff' },
   avatarBtn: { backgroundColor: COLORS.primary },
-  headerTitle: { fontWeight: 'bold', flex: 1, color: COLORS.textDark }, // Removed marginLeft since hamburger icon is gone
+  headerTitle: { fontWeight: 'bold', flex: 1, color: COLORS.textDark }, 
 
   // Bottom tab bar
   bottomBar: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: '#fff', minHeight: 62, paddingTop: 6 },
@@ -341,8 +336,6 @@ const styles = StyleSheet.create({
 
   // Side drawer
   drawerOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 100 },
-  
-  // 🚨 New style for right-sided drawer radius
   drawerContentRight: {
     width: '78%',
     height: '100%',
