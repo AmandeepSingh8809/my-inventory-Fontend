@@ -63,7 +63,7 @@ export default function LoginScreen({ setActiveTab }) {
       await AsyncStorage.setItem('userToken', response.data.token);
       await AsyncStorage.setItem('userRole', response.data.user.role);
       await AsyncStorage.setItem('userName', response.data.user.username);
-      await AsyncStorage.setItem('shopCode', response.data.user.shopCode);
+      await AsyncStorage.setItem('activeShopCode', response.data.user.shopCode);
 
       setActiveTab('Home');
     } catch (error) {

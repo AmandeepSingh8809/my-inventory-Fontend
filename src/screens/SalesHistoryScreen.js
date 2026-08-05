@@ -38,7 +38,7 @@ export default function SalesHistoryScreen() {
       const response = await api.get(url);
       setSales(response.data);
     } catch (error) {
-      console.error("Failed to fetch sales history");
+      console.error("Failed to fetch sales history",error.response?.data?.error|| error.message);
     } finally {
       setLoading(false);
     }

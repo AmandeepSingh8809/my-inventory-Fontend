@@ -14,6 +14,7 @@ export default function FinancialsScreen() {
   const [endDate, setEndDate] = useState(new Date());
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const timeFilters = ['Today', '1 Week', '1 Month', '6 Months', '1 Year', 'All Time', 'Custom'];
 

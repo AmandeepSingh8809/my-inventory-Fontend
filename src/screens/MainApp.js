@@ -43,9 +43,11 @@ const TABS = [
 const OVERFLOW_TABS = [
   { key: 'SalesHistory', label: 'Sales Activity', icon: 'history' },
   { key: 'PurchaseHistory', label: 'Stock In Activity', icon: 'truck-delivery' },
-  { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' }, // 👈 2. Added to Drawer Menu
 ];
-
+const EMPLOYEES_TABS = [
+ { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' }, 
+  { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' },
+];
 // ==========================================
 // 1. MODULAR TOP HEADER
 // ==========================================
@@ -169,9 +171,13 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('activeShopCode');
     await AsyncStorage.removeItem('userName');
+    await AsyncStorage.removeItem('userRole'); // 👈 Clean up role too
     setActiveTab('Login');
     setIsDrawerOpen(false);
   };
+
+  // 🔥 Role Check: Salesmen shouldn't see employee management
+  const canManageEmployees = user.role !== 'Salesman';
 
   return (
     <View style={[styles.drawerOverlay, { flexDirection: 'row-reverse' }]}>
@@ -184,7 +190,7 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>More Actions</Text>
+        <Text style={styles.sectionLabel}>History</Text>
         <View style={styles.drawerList}>
           {OVERFLOW_TABS.map((tab) => (
             <DrawerListItem
@@ -196,6 +202,24 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
             />
           ))}
         </View>
+
+        {/* 🔥 Conditionally rendered so Salesmen don't see options they aren't allowed to use */}
+        {canManageEmployees && (
+          <>
+            <Text style={styles.sectionLabel}>Employee Actions</Text>
+            <View style={styles.drawerList}>
+              {EMPLOYEES_TABS.map((tab) => (
+                <DrawerListItem
+                  key={tab.key}
+                  icon={tab.icon}
+                  label={tab.label}
+                  isActive={activeTab === tab.key}
+                  onPress={() => { setActiveTab(tab.key); setIsDrawerOpen(false); }}
+                />
+              ))}
+            </View>
+          </>
+        )}
 
         <Divider style={styles.divider} />
 
@@ -230,7 +254,8 @@ function MainAppContent() {
     try {
       const token = await AsyncStorage.getItem('userToken');
       const savedName = await AsyncStorage.getItem('userName');
-      const savedRole = await AsyncStorage.getItem('userRole');
+      const savedRole = await AsyncStorage.getItem('userRole'); // 👈 Grab role
+      
       if (token) {
         setUser({ name: savedName || 'User', role: savedRole || 'Store Owner' });
         setActiveTab('Home');
@@ -269,11 +294,11 @@ function MainAppContent() {
           />
         )}
 
-        {/* Screen Routing */}
-        <View style={{ flex: 1 }}>
+        
+        <View style={{flex:1}}>
           {activeTab === 'Loading' && <LoadingScreen />}
           {activeTab === 'Login' && (
-            <LoginScreen setActiveTab={(tab) => {
+            <LoginScreen setActiveTab={(tab) =>{
               setActiveTab(tab);
               if(tab === 'Home'){
                 checkLoginStatus();
@@ -290,7 +315,7 @@ function MainAppContent() {
           {activeTab === 'Settings' && <SettingsScreen setActiveTab={setActiveTab} setIsDrawerOpen={setIsDrawerOpen} />}
           {activeTab === 'AddShop' && <AddShopScreen setActiveTab={setActiveTab} />}
           {activeTab === 'ForgotPassword' && <ForgotPasswordScreen setActiveTab={setActiveTab}/>}
-          {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />} {/* 👈 4. Added Route */}
+          {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />} 
         </View>
 
         {/* Modular Bottom Bar */}
