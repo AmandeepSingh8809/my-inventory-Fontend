@@ -2,10 +2,10 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 // 1. Your API Server (Where Node.js runs)
-export const API_BASE_URL = 'http://192.168.1.160:5000'; 
+export const API_BASE_URL = 'http://192.168.1.88:5000'; 
 
 // 2. Your Image Server
-export const IMAGE_BASE_URL = 'http://192.168.1.160:5000'; 
+export const IMAGE_BASE_URL = 'http://192.168.1.88:5000'; 
 
 // 3. Create your Axios API client pointing ONLY to the API server
 const api = axios.create({

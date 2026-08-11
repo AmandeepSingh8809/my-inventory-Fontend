@@ -3,7 +3,8 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Provider as PaperProvider, Text, Avatar, Surface, Divider, Icon } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import EmployeeListScreen from './EmployeeListScreen';
+import EditEmployeeScreen from './EditEmployeeScreen';
 import DashboardScreen from './DashboardScreen';
 import SalesScreen from './SalesScreen';
 import FinancialsScreen from './FinancialsScreen';
@@ -46,7 +47,7 @@ const OVERFLOW_TABS = [
 ];
 const EMPLOYEES_TABS = [
  { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' }, 
-  { key: 'AddEmployee', label: 'Add Employee', icon: 'account-plus' },
+  { key: 'EmployeeList', label: 'Employee list', icon: 'account' },
 ];
 // ==========================================
 // 1. MODULAR TOP HEADER
@@ -177,7 +178,12 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
   };
 
   // 🔥 Role Check: Salesmen shouldn't see employee management
-  const canManageEmployees = user.role !== 'Salesman';
+const normalizedRole = String(user?.role || '').toLowerCase();
+
+const canManageEmployees =
+  normalizedRole === 'admin' ||
+  normalizedRole === 'owner' ||
+  normalizedRole === 'manager';
 
   return (
     <View style={[styles.drawerOverlay, { flexDirection: 'row-reverse' }]}>
@@ -243,7 +249,10 @@ const RightDrawer = ({ user, activeTab, setActiveTab, setIsDrawerOpen }) => {
 function MainAppContent() {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('Loading');
+  
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+
   const [user, setUser] = useState({ name: 'User', role: 'Store Owner' });
 
   useEffect(() => {
@@ -315,7 +324,24 @@ function MainAppContent() {
           {activeTab === 'Settings' && <SettingsScreen setActiveTab={setActiveTab} setIsDrawerOpen={setIsDrawerOpen} />}
           {activeTab === 'AddShop' && <AddShopScreen setActiveTab={setActiveTab} />}
           {activeTab === 'ForgotPassword' && <ForgotPasswordScreen setActiveTab={setActiveTab}/>}
-          {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />} 
+          {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />}
+          {activeTab === 'EmployeeList' && (
+  <EmployeeListScreen
+    setActiveTab={setActiveTab}
+    setSelectedEmployee={setSelectedEmployee}
+  />
+)}
+
+{activeTab === 'EditEmployee' && (
+  <EditEmployeeScreen
+    employee={selectedEmployee}
+    setActiveTab={setActiveTab}
+  />
+)}
+
+
+
+
         </View>
 
         {/* Modular Bottom Bar */}
