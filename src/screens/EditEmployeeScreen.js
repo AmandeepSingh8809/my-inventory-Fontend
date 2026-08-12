@@ -14,7 +14,6 @@ import {
   Surface,
   Icon,
   Divider,
-  Chip,
   ActivityIndicator,
 } from "react-native-paper";
 
@@ -26,7 +25,6 @@ const COLORS = {
   primaryDark: "#005ecb",
   primarySoft: "#EAF2FF",
   danger: "#d32f2f",
-  dangerSoft: "#FDECEA",
   textDark: "#1c1c1e",
   textMuted: "#8e8e93",
   iconMuted: "#6b7280",
@@ -41,7 +39,34 @@ const COLORS = {
 const SHOP_ROLES = ["Manager", "Salesman", "Stockist"];
 
 // ======================================================
-// AVAILABLE PERMISSIONS
+// ROLE PERMISSIONS
+//
+// IMPORTANT:
+// These are DISPLAY permissions.
+//
+// The backend remains the source of truth.
+// The frontend cannot grant permissions independently.
+// ======================================================
+
+const DEFAULT_PERMISSIONS = {
+  Manager: [
+    "view_financials",
+    "view_reports",
+    "manage_inventory",
+    "manage_employees",
+    "create_sale",
+    "view_sales",
+    "view_inventory",
+    "edit_shop_settings",
+  ],
+
+  Salesman: ["create_sale", "view_own_sales", "view_inventory"],
+
+  Stockist: ["manage_inventory", "view_inventory"],
+};
+
+// ======================================================
+// PERMISSION DISPLAY INFORMATION
 // ======================================================
 
 const PERMISSIONS = [
@@ -102,24 +127,8 @@ const PERMISSIONS = [
 ];
 
 // ======================================================
-// DEFAULT PERMISSIONS
+// COMPONENT
 // ======================================================
-
-const DEFAULT_PERMISSIONS = {
-  Manager: [
-    "view_financials",
-    "view_reports",
-    "manage_inventory",
-    "manage_employees",
-    "create_sale",
-    "view_sales",
-    "edit_shop_settings",
-  ],
-
-  Salesman: ["create_sale", "view_own_sales", "view_inventory"],
-
-  Stockist: ["manage_inventory", "view_inventory"],
-};
 
 const EditEmployeeScreen = ({ employee, setActiveTab }) => {
   const [firstName, setFirstName] = useState("");
@@ -128,8 +137,6 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
   const [email, setEmail] = useState("");
 
   const [role, setRole] = useState("Salesman");
-
-  const [permissions, setPermissions] = useState([]);
 
   const [shops, setShops] = useState([]);
   const [selectedShops, setSelectedShops] = useState([]);
@@ -154,64 +161,98 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
     setPhone(employee.mobile || "");
     setEmail(employee.email || "");
 
-    setRole(employee.role || "Salesman");
-
     /*
-     * If backend already returns permissions:
+     * Employee list normally gives:
+     *
+     * employee.role
+     *
+     * getEmployeeDetails may give the role inside shops.
      */
-    if (Array.isArray(employee.permissions)) {
-      setPermissions(employee.permissions);
-    } else {
-      setPermissions(DEFAULT_PERMISSIONS[employee.role] || []);
+    let employeeRole = employee.role;
+
+    if (!employeeRole && Array.isArray(employee.shops)) {
+      const activeShop = employee.shops.find(
+        (shop) =>
+          shop.shopCode === employee.shopCode ||
+          shop.shop_code === employee.shopCode,
+      );
+
+      if (activeShop?.role) {
+        employeeRole = activeShop.role;
+      }
     }
 
-    /*
-     * If employee already has multiple shops:
-     */
+    setRole(employeeRole || "Salesman");
+
+    // ====================================================
+    // LOAD EXISTING SHOP ASSIGNMENTS
+    // ====================================================
+
     if (Array.isArray(employee.shops)) {
-      setSelectedShops(
-        employee.shops.map((shop) => shop.shop_code || shop.code),
-      );
+      const existingShopCodes = employee.shops
+        .map((shop) => shop.shopCode || shop.shop_code || shop.code)
+        .filter(Boolean);
+
+      setSelectedShops(existingShopCodes);
+    } else if (employee.shopCode) {
+      setSelectedShops([employee.shopCode]);
     } else if (employee.shop_code) {
-      // Existing single-shop employee
       setSelectedShops([employee.shop_code]);
     } else {
       setSelectedShops([]);
     }
 
-    fetchShops();
+    fetchManageableShops();
   }, [employee]);
 
   // ======================================================
-  // FETCH SHOPS
+  // FETCH SHOPS THE REQUESTER CAN MANAGE
   // ======================================================
 
-  const fetchShops = async () => {
+  const fetchManageableShops = async () => {
     try {
       setLoadingShops(true);
 
       const token = await AsyncStorage.getItem("userToken");
 
-      const response = await api.get("/my-owned-shops", {
+      /*
+       * IMPORTANT:
+       *
+       * Do NOT use /my-owned-shops here.
+       *
+       * A Manager may be allowed to manage employees
+       * in shops that they do not own.
+       *
+       * The backend should expose something like:
+       *
+       * GET /employees/manageable-shops
+       *
+       * and determine the shops from req.user.id.
+       */
+
+      const response = await api.get("/employees/manageable-shops", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
-      console.log("SHOPS RESPONSE:", response.data);
+      console.log("MANAGEABLE SHOPS RESPONSE:", response.data);
 
-      setShops(
-        Array.isArray(response.data)
-          ? response.data
-          : response.data.shops || [],
-      );
+      const responseShops = Array.isArray(response.data)
+        ? response.data
+        : response.data.shops || [];
+
+      setShops(responseShops);
     } catch (error) {
       console.error(
-        "FETCH SHOPS ERROR:",
+        "FETCH MANAGEABLE SHOPS ERROR:",
         error.response?.data || error.message,
       );
 
-      Alert.alert("Error", "Could not load shops.");
+      Alert.alert(
+        "Error",
+        error.response?.data?.error || "Could not load manageable shops.",
+      );
     } finally {
       setLoadingShops(false);
     }
@@ -225,27 +266,13 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
     setRole(newRole);
 
     /*
-     * Automatically give the role its default
-     * permissions when role changes.
+     * Permissions are role-based on the backend.
      *
-     * User can then customize them.
+     * Therefore we don't send custom permissions
+     * to the backend.
+     *
+     * This only updates the UI preview.
      */
-
-    setPermissions(DEFAULT_PERMISSIONS[newRole] || []);
-  };
-
-  // ======================================================
-  // TOGGLE PERMISSION
-  // ======================================================
-
-  const togglePermission = (permissionKey) => {
-    setPermissions((current) => {
-      if (current.includes(permissionKey)) {
-        return current.filter((permission) => permission !== permissionKey);
-      }
-
-      return [...current, permissionKey];
-    });
   };
 
   // ======================================================
@@ -269,25 +296,26 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
   const handleUpdate = async () => {
     if (!employee?.id) {
       Alert.alert("Error", "Employee ID is missing.");
-
       return;
     }
 
     if (!firstName.trim()) {
       Alert.alert("Error", "First name is required.");
-
       return;
     }
 
     if (!phone.trim()) {
       Alert.alert("Error", "Phone number is required.");
+      return;
+    }
 
+    if (!role) {
+      Alert.alert("Error", "Please select a role.");
       return;
     }
 
     if (selectedShops.length === 0) {
       Alert.alert("Error", "Please assign at least one shop.");
-
       return;
     }
 
@@ -296,29 +324,36 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
 
       const token = await AsyncStorage.getItem("userToken");
 
+      // ==================================================
+      // IMPORTANT SECURITY CHANGE
+      // ==================================================
+      //
+      // We send only the employee information,
+      // role and requested shop codes.
+      //
+      // DO NOT send:
+      //
+      // requesterId
+      // activeShopCode
+      //
+      // DO NOT trust permissions from frontend.
+      //
+      // Backend determines whether requester can manage
+      // every requested shop.
+      // ==================================================
+
       const payload = {
         first_name: firstName.trim(),
-
         last_name: lastName.trim(),
-
         mobile: phone.trim(),
-
         email: email.trim(),
 
         role,
-
-        permissions,
 
         shop_codes: selectedShops,
       };
 
       console.log("UPDATE EMPLOYEE PAYLOAD:", payload);
-
-      /*
-       * Backend endpoint:
-       *
-       * PUT /employees/:id
-       */
 
       const response = await api.put(`/employees/${employee.id}`, payload, {
         headers: {
@@ -340,10 +375,35 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
         error.response?.data || error.message,
       );
 
-      Alert.alert(
-        "Error",
-        error.response?.data?.error || "Could not update employee.",
-      );
+      const status = error.response?.status;
+
+      const backendError = error.response?.data?.error;
+
+      /*
+       * Specifically explain authorization failures.
+       */
+
+      if (status === 403) {
+        Alert.alert(
+          "Permission Denied",
+          backendError ||
+            "You are not allowed to manage one or more selected shops.",
+        );
+
+        return;
+      }
+
+      if (status === 400) {
+        Alert.alert(
+          "Invalid Request",
+          backendError ||
+            "Please check the employee information and shop assignments.",
+        );
+
+        return;
+      }
+
+      Alert.alert("Error", backendError || "Could not update employee.");
     } finally {
       setIsSaving(false);
     }
@@ -356,19 +416,15 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
   const handleDelete = () => {
     Alert.alert(
       "Delete Employee",
-
       `Are you sure you want to remove ${firstName} ${lastName}?`,
-
       [
         {
           text: "Cancel",
           style: "cancel",
         },
-
         {
           text: "Delete",
           style: "destructive",
-
           onPress: deleteEmployee,
         },
       ],
@@ -425,6 +481,12 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
   }
 
   // ======================================================
+  // CURRENT ROLE PERMISSIONS
+  // ======================================================
+
+  const rolePermissions = DEFAULT_PERMISSIONS[role] || [];
+
+  // ======================================================
   // UI
   // ======================================================
 
@@ -461,7 +523,7 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
               </Text>
 
               <Text variant="bodyMedium" style={styles.screenSubtitle}>
-                Manage employee information, role, permissions and shops.
+                Manage employee information, role and shop access.
               </Text>
             </View>
           </View>
@@ -517,8 +579,7 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
           <Text style={styles.sectionTitle}>Shop Role</Text>
 
           <Text style={styles.helperText}>
-            The role controls the employee's normal responsibilities inside the
-            shop.
+            Permissions are controlled by the employee's role.
           </Text>
 
           <View style={styles.roleContainer}>
@@ -560,19 +621,38 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
           <Text style={styles.sectionTitle}>Assign Shops</Text>
 
           <Text style={styles.helperText}>
-            Select the shops this employee can work in.
+            Only shops that you are authorized to manage can be assigned.
           </Text>
 
           {loadingShops ? (
-            <ActivityIndicator style={{ marginVertical: 20 }} />
+            <ActivityIndicator
+              style={{
+                marginVertical: 20,
+              }}
+            />
           ) : shops.length === 0 ? (
-            <Text style={styles.emptyText}>No shops available.</Text>
+            <View style={styles.emptyContainer}>
+              <Icon
+                source="store-off-outline"
+                size={32}
+                color={COLORS.textMuted}
+              />
+
+              <Text style={styles.emptyText}>
+                No manageable shops available.
+              </Text>
+            </View>
           ) : (
             <View style={styles.shopContainer}>
               {shops.map((shop) => {
-                const shopCode = shop.shop_code || shop.code;
+                const shopCode = shop.shop_code || shop.shopCode || shop.code;
 
-                const shopName = shop.shop_name || shop.name || shopCode;
+                const shopName =
+                  shop.shop_name || shop.shopName || shop.name || shopCode;
+
+                if (!shopCode) {
+                  return null;
+                }
 
                 const selected = selectedShops.includes(shopCode);
 
@@ -621,24 +701,24 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
 
           {/* PERMISSIONS */}
 
-          <Text style={styles.sectionTitle}>Permissions</Text>
+          <Text style={styles.sectionTitle}>Role Permissions</Text>
 
           <Text style={styles.helperText}>
-            Choose exactly what this employee can do.
+            These permissions come from the selected role and are enforced by
+            the backend.
           </Text>
 
           <View style={styles.permissionContainer}>
             {PERMISSIONS.map((permission) => {
-              const enabled = permissions.includes(permission.key);
+              const enabled = rolePermissions.includes(permission.key);
 
               return (
-                <TouchableOpacity
+                <View
                   key={permission.key}
                   style={[
                     styles.permissionCard,
                     enabled && styles.permissionCardActive,
                   ]}
-                  onPress={() => togglePermission(permission.key)}
                 >
                   <View
                     style={[
@@ -668,14 +748,25 @@ const EditEmployeeScreen = ({ employee, setActiveTab }) => {
                       enabled ? "checkbox-marked" : "checkbox-blank-outline"
                     }
                     size={25}
-                    color={enabled ? COLORS.primary : COLORS.chevronIdle}
+                    color={enabled ? COLORS.primary : COLORS.iconMuted}
                   />
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>
 
           <Divider style={styles.divider} />
+
+          {/* SECURITY NOTICE */}
+
+          <View style={styles.securityNotice}>
+            <Icon source="shield-check" size={22} color={COLORS.primary} />
+
+            <Text style={styles.securityText}>
+              Shop access is verified by the server. You cannot assign this
+              employee to shops you are not authorized to manage.
+            </Text>
+          </View>
 
           {/* SAVE */}
 
@@ -893,10 +984,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  emptyContainer: {
+    alignItems: "center",
+    paddingVertical: 20,
+  },
+
   emptyText: {
     color: COLORS.textMuted,
     textAlign: "center",
-    paddingVertical: 20,
+    marginTop: 8,
   },
 
   permissionContainer: {
@@ -948,6 +1044,23 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 3,
     lineHeight: 17,
+  },
+
+  securityNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+  },
+
+  securityText: {
+    flex: 1,
+    marginLeft: 10,
+    color: COLORS.textDark,
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   buttonContent: {

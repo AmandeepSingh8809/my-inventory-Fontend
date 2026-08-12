@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   StyleSheet,
@@ -8,69 +8,239 @@ import {
   Alert,
   Image,
   TouchableOpacity,
-} from 'react-native';
-import { TextInput, Button, Text, Card } from 'react-native-paper';
-import api from '../api/client';
+} from "react-native";
+
+import { TextInput, Button, Text, Card } from "react-native-paper";
+import api from "../api/client";
 
 const COLORS = {
-  bg: '#F4F6F9',
-  navy: '#007AFF',
-  amber: '#E8A33D',
-  card: '#FFFFFF',
-  text: '#1A2233',
-  subtext: '#6B7280',
-  border: '#E3E7EC',
+  bg: "#F4F6F9",
+  navy: "#007AFF",
+  amber: "#E8A33D",
+  card: "#FFFFFF",
+  text: "#1A2233",
+  subtext: "#6B7280",
+  border: "#E3E7EC",
 };
 
 export default function RegisterScreen({ setActiveTab }) {
-  // Form State
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [mobile, setMobile] = useState('');
+  // ============================================================
+  // FORM STATE
+  // ============================================================
 
-  const [password, setPassword] = useState('');
-  
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [password, setPassword] = useState("");
+
   const [secureText, setSecureText] = useState(true);
   const [loading, setLoading] = useState(false);
 
+  // ============================================================
+  // REGISTER
+  // ============================================================
+
   const handleRegister = async () => {
-    // Basic Validation
-    if (!firstName || !lastName || !username || !email || !mobile  || !password) {
-      Alert.alert('Missing Fields', 'Please fill out all the fields to create your account.');
+    // ----------------------------------------------------------
+    // Trim values
+    // ----------------------------------------------------------
+
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanMobile = mobile.trim();
+    const cleanPassword = password;
+
+    // ----------------------------------------------------------
+    // Required fields
+    // ----------------------------------------------------------
+
+    if (
+      !cleanFirstName ||
+      !cleanLastName ||
+      !cleanUsername ||
+      !cleanEmail ||
+      !cleanMobile ||
+      !cleanPassword
+    ) {
+      Alert.alert(
+        "Missing Fields",
+        "Please fill out all the fields to create your account."
+      );
+
       return;
     }
 
-    setLoading(true);
+    // ----------------------------------------------------------
+    // Basic email validation
+    // ----------------------------------------------------------
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(cleanEmail)) {
+      Alert.alert(
+        "Invalid Email",
+        "Please enter a valid email address."
+      );
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // Basic password validation
+    // ----------------------------------------------------------
+
+    if (cleanPassword.length < 6) {
+      Alert.alert(
+        "Weak Password",
+        "Password must be at least 6 characters long."
+      );
+
+      return;
+    }
+
+    // ----------------------------------------------------------
+    // Mobile validation
+    // ----------------------------------------------------------
+
+    if (cleanMobile.length < 10) {
+      Alert.alert(
+        "Invalid Mobile",
+        "Please enter a valid mobile number."
+      );
+
+      return;
+    }
+
     try {
-      // Adjust this endpoint to match your backend route for registration
-      const response = await api.post('/auth/register', {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        username: username.trim().toLowerCase(),
-        email: email.trim().toLowerCase(),
-        mobile: mobile.trim(),
-        password: password,
+      setLoading(true);
+
+      // ========================================================
+      // SEND REGISTRATION REQUEST
+      // ========================================================
+
+      const payload = {
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
+        username: cleanUsername,
+        email: cleanEmail,
+        mobile: cleanMobile,
+        password: cleanPassword,
+      };
+
+      console.log("REGISTER PAYLOAD:", {
+        ...payload,
+        password: "***",
       });
 
-      Alert.alert(
-        'Account Created',
-        'Your account has been successfully created. Please log in.',
-        [{ text: 'OK', onPress: () => setActiveTab('Login') }]
+      const response = await api.post(
+        "/auth/register",
+        payload
       );
+
+      console.log(
+        "REGISTER RESPONSE:",
+        response.data
+      );
+
+      // ========================================================
+      // SUCCESS
+      // ========================================================
+
+      Alert.alert(
+        "Account Created",
+        "Your account has been successfully created. Please log in.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setActiveTab("Login");
+            },
+          },
+        ]
+      );
+
+      // Clear form
+      setFirstName("");
+      setLastName("");
+      setUsername("");
+      setEmail("");
+      setMobile("");
+      setPassword("");
     } catch (error) {
-      const errorMsg = error.response?.data?.error || 'Failed to create account.';
-      Alert.alert('Registration Failed', errorMsg);
+      console.error(
+        "REGISTRATION ERROR:",
+        error.response?.data || error.message
+      );
+
+      // ========================================================
+      // BACKEND ERROR
+      // ========================================================
+
+      const statusCode = error.response?.status;
+
+      const errorMessage =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Failed to create account.";
+
+      // --------------------------------------------------------
+      // Duplicate username/email
+      // --------------------------------------------------------
+
+      if (statusCode === 409) {
+        Alert.alert(
+          "Account Already Exists",
+          errorMessage
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // Validation error
+      // --------------------------------------------------------
+
+      if (statusCode === 400) {
+        Alert.alert(
+          "Invalid Information",
+          errorMessage
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // Server error
+      // --------------------------------------------------------
+
+      Alert.alert(
+        "Registration Failed",
+        errorMessage
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: COLORS.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{
+        flex: 1,
+        backgroundColor: COLORS.bg,
+      }}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : undefined
+      }
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -79,24 +249,41 @@ export default function RegisterScreen({ setActiveTab }) {
       >
         <Card style={styles.card}>
           <Card.Content>
-            
-            {/* Header Section */}
+
+            {/* ==================================================
+                HEADER
+            ================================================== */}
+
             <View style={styles.headerContainer}>
               <Image
-                source={require('../../assets/logo/logo.png')}
+                source={require("../../assets/logo/logo.png")}
                 style={styles.logo}
                 resizeMode="contain"
               />
-              <Text style={styles.eyebrow}>JOIN INVENTORY MANAGER</Text>
-              <Text variant="headlineMedium" style={styles.title}>Create Account</Text>
-              <Text variant="bodyMedium" style={styles.subtitle}>
+
+              <Text style={styles.eyebrow}>
+                JOIN INVENTORY MANAGER
+              </Text>
+
+              <Text
+                variant="headlineMedium"
+                style={styles.title}
+              >
+                Create Account
+              </Text>
+
+              <Text
+                variant="bodyMedium"
+                style={styles.subtitle}
+              >
                 Set up your store and manage inventory
               </Text>
             </View>
 
-            {/* Form Section */}
-            
-            {/* Row for First and Last Name to save space */}
+            {/* ==================================================
+                NAME
+            ================================================== */}
+
             <View style={styles.row}>
               <TextInput
                 label="First Name"
@@ -105,8 +292,13 @@ export default function RegisterScreen({ setActiveTab }) {
                 mode="outlined"
                 outlineColor={COLORS.border}
                 activeOutlineColor={COLORS.navy}
-                style={[styles.input, styles.halfInput]}
+                autoCapitalize="words"
+                style={[
+                  styles.input,
+                  styles.halfInput,
+                ]}
               />
+
               <TextInput
                 label="Last Name"
                 value={lastName}
@@ -114,9 +306,17 @@ export default function RegisterScreen({ setActiveTab }) {
                 mode="outlined"
                 outlineColor={COLORS.border}
                 activeOutlineColor={COLORS.navy}
-                style={[styles.input, styles.halfInput]}
+                autoCapitalize="words"
+                style={[
+                  styles.input,
+                  styles.halfInput,
+                ]}
               />
             </View>
+
+            {/* ==================================================
+                USERNAME
+            ================================================== */}
 
             <TextInput
               label="Username"
@@ -124,11 +324,21 @@ export default function RegisterScreen({ setActiveTab }) {
               onChangeText={setUsername}
               mode="outlined"
               autoCapitalize="none"
+              autoCorrect={false}
               outlineColor={COLORS.border}
               activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="account-outline" color={COLORS.subtext} />}
+              left={
+                <TextInput.Icon
+                  icon="account-outline"
+                  color={COLORS.subtext}
+                />
+              }
               style={styles.input}
             />
+
+            {/* ==================================================
+                EMAIL
+            ================================================== */}
 
             <TextInput
               label="Email Address"
@@ -136,12 +346,22 @@ export default function RegisterScreen({ setActiveTab }) {
               onChangeText={setEmail}
               mode="outlined"
               autoCapitalize="none"
+              autoCorrect={false}
               keyboardType="email-address"
               outlineColor={COLORS.border}
               activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="email-outline" color={COLORS.subtext} />}
+              left={
+                <TextInput.Icon
+                  icon="email-outline"
+                  color={COLORS.subtext}
+                />
+              }
               style={styles.input}
             />
+
+            {/* ==================================================
+                MOBILE
+            ================================================== */}
 
             <TextInput
               label="Mobile Number"
@@ -151,13 +371,18 @@ export default function RegisterScreen({ setActiveTab }) {
               keyboardType="phone-pad"
               outlineColor={COLORS.border}
               activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="phone-outline" color={COLORS.subtext} />}
+              left={
+                <TextInput.Icon
+                  icon="phone-outline"
+                  color={COLORS.subtext}
+                />
+              }
               style={styles.input}
             />
 
-           
-           
-           
+            {/* ==================================================
+                PASSWORD
+            ================================================== */}
 
             <TextInput
               label="Password"
@@ -165,18 +390,37 @@ export default function RegisterScreen({ setActiveTab }) {
               onChangeText={setPassword}
               mode="outlined"
               secureTextEntry={secureText}
+              autoCapitalize="none"
+              autoCorrect={false}
               outlineColor={COLORS.border}
               activeOutlineColor={COLORS.navy}
-              left={<TextInput.Icon icon="lock-outline" color={COLORS.subtext} />}
+              left={
+                <TextInput.Icon
+                  icon="lock-outline"
+                  color={COLORS.subtext}
+                />
+              }
               right={
                 <TextInput.Icon
-                  icon={secureText ? 'eye-outline' : 'eye-off-outline'}
+                  icon={
+                    secureText
+                      ? "eye-outline"
+                      : "eye-off-outline"
+                  }
                   color={COLORS.subtext}
-                  onPress={() => setSecureText((prev) => !prev)}
+                  onPress={() =>
+                    setSecureText(
+                      (previous) => !previous
+                    )
+                  }
                 />
               }
               style={styles.input}
             />
+
+            {/* ==================================================
+                REGISTER BUTTON
+            ================================================== */}
 
             <Button
               mode="contained"
@@ -185,16 +429,31 @@ export default function RegisterScreen({ setActiveTab }) {
               disabled={loading}
               style={styles.registerBtn}
               buttonColor={COLORS.navy}
-              contentStyle={{ paddingVertical: 8 }}
+              contentStyle={styles.buttonContent}
             >
-              Sign Up
+              {loading
+                ? "Creating Account..."
+                : "Sign Up"}
             </Button>
 
-            {/* Footer Navigation */}
+            {/* ==================================================
+                LOGIN
+            ================================================== */}
+
             <View style={styles.footerRow}>
-              <Text style={styles.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => setActiveTab('Login')}>
-                <Text style={styles.footerLink}>Log In</Text>
+              <Text style={styles.footerText}>
+                Already have an account?{" "}
+              </Text>
+
+              <TouchableOpacity
+                disabled={loading}
+                onPress={() =>
+                  setActiveTab("Login")
+                }
+              >
+                <Text style={styles.footerLink}>
+                  Log In
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -205,62 +464,105 @@ export default function RegisterScreen({ setActiveTab }) {
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
+
 const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: 20,
-    paddingVertical: 40, // Added extra padding so the top and bottom breathe nicely
+    paddingVertical: 40,
   },
+
   card: {
     paddingVertical: 24,
     backgroundColor: COLORS.card,
     borderRadius: 20,
-    width: '100%',
+    width: "100%",
     maxWidth: 420,
-    alignSelf: 'center',
-    shadowColor: '#0E2338',
-    shadowOffset: { width: 0, height: 8 },
+    alignSelf: "center",
+
+    shadowColor: "#0E2338",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 16,
+
     elevation: 5,
   },
-  headerContainer: { alignItems: 'center', marginBottom: 24 },
-  
-  logo: { width: 120, height: 120, marginBottom: 10 },
-  
+
+  headerContainer: {
+    alignItems: "center",
+    marginBottom: 24,
+  },
+
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 10,
+  },
+
   eyebrow: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: 1.5,
     color: COLORS.amber,
     marginBottom: 6,
   },
-  title: { fontWeight: 'bold', color: COLORS.text },
-  subtitle: { color: COLORS.subtext, marginTop: 4, textAlign: 'center' },
-  
-  input: { marginBottom: 14, backgroundColor: '#fff' },
-  
-  // Custom styles for putting First/Last name side-by-side
+
+  title: {
+    fontWeight: "bold",
+    color: COLORS.text,
+  },
+
+  subtitle: {
+    color: COLORS.subtext,
+    marginTop: 4,
+    textAlign: "center",
+  },
+
+  input: {
+    marginBottom: 14,
+    backgroundColor: "#fff",
+  },
+
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
+
   halfInput: {
-    width: '48%', 
+    width: "48%",
   },
-  
-  registerBtn: { 
-    borderRadius: 10, 
+
+  registerBtn: {
+    borderRadius: 10,
     marginTop: 10,
-    marginBottom: 20 
+    marginBottom: 20,
   },
-  
+
+  buttonContent: {
+    paddingVertical: 8,
+  },
+
   footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginTop: 8,
   },
-  footerText: { color: COLORS.subtext, fontSize: 14 },
-  footerLink: { color: COLORS.navy, fontWeight: '700', fontSize: 14 },
+
+  footerText: {
+    color: COLORS.subtext,
+    fontSize: 14,
+  },
+
+  footerLink: {
+    color: COLORS.navy,
+    fontWeight: "700",
+    fontSize: 14,
+  },
 });
