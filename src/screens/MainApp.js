@@ -18,7 +18,7 @@ import PurchaseHistoryScreen from '../screens/PurchaseHistoryScreen';
 import AddShopScreen from './AddShopScreen';
 import ForgotPasswordScreen from './ForgotPasswordScreen';
 import AddEmployeeScreen from './AddEmployeeScreen'; // 👈 1. Imported the new screen
-
+import EditItemScreen from './EditItemScreen';
 const COLORS = {
   primary: '#007AFF',
   primaryDark: '#005ecb',
@@ -252,7 +252,7 @@ function MainAppContent() {
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
-
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [user, setUser] = useState({ name: 'User', role: 'Store Owner' });
 
   useEffect(() => {
@@ -315,7 +315,12 @@ function MainAppContent() {
             }} />
           )}
           {activeTab === 'Register' && <RegisterScreen setActiveTab={setActiveTab}/>}
-          {activeTab === 'Home' && <DashboardScreen setActiveTab={setActiveTab} />}
+{activeTab === 'Home' && (
+  <DashboardScreen 
+    setActiveTab={setActiveTab} 
+    setSelectedProduct={setSelectedProduct} 
+  />
+)}
           {activeTab === 'Financials' && <FinancialsScreen />}
           {activeTab === 'SellItem' && <SalesScreen />}
           {activeTab === 'AddItem' && <AddItemScreen setActiveTab={setActiveTab} />}
@@ -324,6 +329,7 @@ function MainAppContent() {
           {activeTab === 'Settings' && <SettingsScreen setActiveTab={setActiveTab} setIsDrawerOpen={setIsDrawerOpen} />}
           {activeTab === 'AddShop' && <AddShopScreen setActiveTab={setActiveTab} />}
           {activeTab === 'ForgotPassword' && <ForgotPasswordScreen setActiveTab={setActiveTab}/>}
+          {activeTab === 'EditItem' && <EditItemScreen setActiveTab={setActiveTab}  product={selectedProduct}/>}
           {activeTab === 'AddEmployee' && <AddEmployeeScreen setActiveTab={setActiveTab} />}
           {activeTab === 'EmployeeList' && (
   <EmployeeListScreen
