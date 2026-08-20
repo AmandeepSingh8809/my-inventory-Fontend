@@ -2,10 +2,10 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Node.js backend
-export const API_BASE_URL = 'http://192.168.1.88:5000';
+export const API_BASE_URL = 'http://192.168.1.134:5000';
 
 // Image server
-export const IMAGE_BASE_URL = 'http://192.168.1.88:5000';
+export const IMAGE_BASE_URL = 'http://192.168.1.134:5000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

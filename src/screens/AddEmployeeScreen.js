@@ -7,7 +7,7 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
-import { TextInput, Button, Text, Card, IconButton,Menu } from 'react-native-paper';
+import { TextInput, Button, Text, Card, IconButton, Menu } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api/client';
 
@@ -29,36 +29,49 @@ export default function AddEmployeeScreen({ setActiveTab }) {
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Salesman');
-  const [showRoleMenu,setShowRoleMenu] =useState(false);
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [secureText, setSecureText] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const handleCreateEmployee = async () => {
-    if (!firstName || !lastName || !username || !email || !password || !role) {
-      Alert.alert('Missing Fields', 'Please fill out all required fields.');
+    // 1. Validate required fields (Email, Username, and Last Name are optional)
+    if (!firstName || !mobile || !password || !role) {
+      Alert.alert('Missing Fields', 'Please fill out First Name, Mobile, Password, and Role.');
+      return;
+    }
+
+    // 2. Validate password length
+    if (password.length < 6) {
+      Alert.alert('Invalid Password', 'Password must be at least 6 characters long.');
       return;
     }
 
     setLoading(true);
     try {
-      // Fetch the active shop code from AsyncStorage to assign them to the current shop
+      // 3. Fetch the active shop code to bypass the "shopCode: null" JWT issue
       const activeShopCode = await AsyncStorage.getItem('activeShopCode');
 
+      // 4. API Call matching the backend schema perfectly
       await api.post('/employees/create', {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        username: username.trim().toLowerCase(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        username: username.trim().toLowerCase(), // Backend will fallback to mobile if this is empty
         email: email.trim().toLowerCase(),
         mobile: mobile.trim(),
         password: password,
         role: role.trim(),
-        shopCodes: [activeShopCode], // 👈 The magic array! Send 1 or 5 codes here.
+        shop_codes: [activeShopCode], 
+      }, {
+        // Pass the active shop code in the headers for security validation
+        headers: {
+          'x-shop-code': activeShopCode
+        }
       });
 
       Alert.alert(
         'Success',
-        'Employee account created and permissions assigned successfully!',
-        [{ text: 'OK', onPress: () => setActiveTab('Settings') }]
+        'Employee account created and assigned successfully!',
+        [{ text: 'OK', onPress: () => setActiveTab('EmployeeList') }]
       );
     } catch (error) {
       const errorMsg = error.response?.data?.error || 'Failed to create employee.';
@@ -84,7 +97,7 @@ export default function AddEmployeeScreen({ setActiveTab }) {
                 iconColor={COLORS.text}
                 size={24}
                 style={styles.backButton}
-                onPress={() => setActiveTab('Settings')}
+                onPress={() => setActiveTab('EmployeeList')}
               />
               <View style={styles.iconWrapper}>
                 <IconButton icon="account-plus-outline" iconColor={COLORS.navy} size={40} />
@@ -107,7 +120,7 @@ export default function AddEmployeeScreen({ setActiveTab }) {
                 style={[styles.input, styles.halfInput]}
               />
               <TextInput
-                label="Last Name"
+                label="Last Name (Optional)"
                 value={lastName}
                 onChangeText={setLastName}
                 mode="outlined"
@@ -118,7 +131,7 @@ export default function AddEmployeeScreen({ setActiveTab }) {
             </View>
 
             <TextInput
-              label="Username"
+              label="Username (Optional)"
               value={username}
               onChangeText={setUsername}
               mode="outlined"
@@ -130,7 +143,7 @@ export default function AddEmployeeScreen({ setActiveTab }) {
             />
 
             <TextInput
-              label="Email Address"
+              label="Email Address (Optional)"
               value={email}
               onChangeText={setEmail}
               mode="outlined"
@@ -153,12 +166,14 @@ export default function AddEmployeeScreen({ setActiveTab }) {
               left={<TextInput.Icon icon="phone-outline" color={COLORS.subtext} />}
               style={styles.input}
             />
-            <Menu visible={showRoleMenu}
-            onDismiss={()=>setShowRoleMenu(false)}
-            style={{marginTop:55}}
-            contentStyle={styles.menuContent}
-            anchor={
-                <TouchableOpacity onPress={()=>setShowRoleMenu(true)} activeOpacity={0.8}>
+            
+            <Menu 
+              visible={showRoleMenu}
+              onDismiss={() => setShowRoleMenu(false)}
+              style={{ marginTop: 55 }}
+              contentStyle={styles.menuContent}
+              anchor={
+                <TouchableOpacity onPress={() => setShowRoleMenu(true)} activeOpacity={0.8}>
                     <View pointerEvents='none'>
                         <TextInput
                         label="Role"
@@ -171,31 +186,29 @@ export default function AddEmployeeScreen({ setActiveTab }) {
                         style={styles.input}
                         editable={false}
                         />
-
                     </View>
                 </TouchableOpacity>
-            }
+              }
             >
                 <Menu.Item
-                onPress={()=>{setRole('Manager'); setShowRoleMenu(false);}}
-                title="Manager"
-                titleStyle={styles.menuItemText}
-                leadingIcon="account-tie"
+                  onPress={() => { setRole('Manager'); setShowRoleMenu(false); }}
+                  title="Manager"
+                  titleStyle={styles.menuItemText}
+                  leadingIcon="account-tie"
                 />
                 <Menu.Item
-                onPress={()=>{setRole('Saleman'); setShowRoleMenu(false);}}
-                title="Saleman"
-                titleStyle={styles.menuItemText}
-                leadingIcon="cash-register"
+                  onPress={() => { setRole('Salesman'); setShowRoleMenu(false); }}
+                  title="Salesman"
+                  titleStyle={styles.menuItemText}
+                  leadingIcon="cash-register"
                 />
                 <Menu.Item
-                onPress={()=>{setRole('Stockist'); setShowRoleMenu(false);}}
-                title="Stockist"
-                titleStyle={styles.menuItemText}
-                leadingIcon="package-variant-closed"
+                  onPress={() => { setRole('Stockist'); setShowRoleMenu(false); }}
+                  title="Stockist"
+                  titleStyle={styles.menuItemText}
+                  leadingIcon="package-variant-closed"
                 />
             </Menu>
-            
 
             <TextInput
               label="Temporary Password"
